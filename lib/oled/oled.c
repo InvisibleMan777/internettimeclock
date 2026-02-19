@@ -20,6 +20,26 @@
 
 esp_lcd_panel_handle_t panel_handle = NULL;
 
+/**
+ * This font set provides bitmap representations for ASCII characters (32-126)
+ * optimized for small OLED displays. Each character is represented as a 5-byte
+ * array where each byte corresponds to one column of the character glyph.
+ * 
+ * Font Creation Method:
+ * - Each glyph is 5 pixels wide and 7 pixels tall (5x7 bitmap)
+ * - Each uint8_t value represents a vertical column (7 bits for 7 rows)
+ * - Bit set (1) = pixel ON, Bit clear (0) = pixel OFF
+ * - LSB represents the bottom row, MSB represents the top row
+ * - Total of 5 bytes per character creates the complete horizontal representation
+ * 
+ * Example interpretation of glyph_I {0x00, 0x41, 0x7f, 0x41, 0x00}:
+ *   Column 0: 0x00 = 0000000 (empty column)
+ *   Column 1: 0x41 = 0100001 (top and bottom pixels)
+ *   Column 2: 0x7f = 1111111 (full vertical line)
+ *   Column 3: 0x41 = 0100001 (top and bottom pixels)
+ *   Column 4: 0x00 = 0000000 (empty column)
+ */
+
 // Simple 5x7 font for ASCII characters 32-126
 static const uint8_t glyph_space[5] = {0x00, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t glyph_D[5] = {0x7f, 0x41, 0x41, 0x22, 0x1c};
@@ -61,6 +81,7 @@ static const uint8_t glyph_9[5] = {0x06, 0x49, 0x49, 0x29, 0x1e};
 static const uint8_t glyph_dot[5] = {0x00, 0x00, 0x60, 0x60, 0x00};
 static const uint8_t glyph_dash[5] = {0x08, 0x08, 0x08, 0x08, 0x08};
 static const uint8_t glyph_plus[5] = {0x08, 0x08, 0x3e, 0x08, 0x08};
+static const uint8_t glyth_double_dot[5] = {0x00, 0x00, 0x66, 0x66, 0x00};
 
 // Function to get the glyph data for a given character
 static const uint8_t *oled_glyph_for_char(char c) {
@@ -104,6 +125,7 @@ static const uint8_t *oled_glyph_for_char(char c) {
         case '.': return glyph_dot;
         case '-': return glyph_dash;
         case '+': return glyph_plus;
+        case ':': return glyth_double_dot;
         case ' ':
         default: return glyph_space;
     }
