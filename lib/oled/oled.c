@@ -9,11 +9,8 @@
 #include "esp_lcd_panel_vendor.h"
 
 #define I2C_BUS_PORT 0 // I2C port number for the OLED display
-#define I2C_SDA_GPIO 1 // GPIO number for I2C SDA line
-#define I2C_SCL_GPIO 2 // GPIO number for I2C SCL line
 #define I2C_CLK_HZ 400000 // I2C clock speed in Hz
 
-#define OLED_ADDR 0x3C // I2C address of the OLED display
 #define OLED_WIDTH 128 // OLED display width in pixels
 #define OLED_HEIGHT 64 // OLED display height in pixels
 #define OLED_PAGES (OLED_HEIGHT / 8) // Number of 8-pixel pages in the OLED display
@@ -176,14 +173,14 @@ static void oled_write_string_page(uint8_t x, uint8_t page, const char *str) {
 }
 
 // Function to initialize the OLED display
-int initialize_oled(void) {
+int initialize_oled(uint32_t i2c_addr, gpio_num_t sda_gpio, gpio_num_t scl_gpio) {
      // Create I2C master bus
     i2c_master_bus_handle_t i2c_bus = NULL;
     i2c_master_bus_config_t bus_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = I2C_BUS_PORT,
-        .sda_io_num = I2C_SDA_GPIO,
-        .scl_io_num = I2C_SCL_GPIO,
+        .sda_io_num = sda_gpio,
+        .scl_io_num = scl_gpio,
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
@@ -193,7 +190,7 @@ int initialize_oled(void) {
     // Create LCD panel IO handle for I2C communication
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_i2c_config_t io_config = {
-        .dev_addr = OLED_ADDR,
+        .dev_addr = i2c_addr,
         .scl_speed_hz = I2C_CLK_HZ,
         .control_phase_bytes = 1,
         .lcd_cmd_bits = 8,

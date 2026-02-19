@@ -11,8 +11,8 @@
 #include "esp_sntp.h"
 #include "esp_http_client.h"
 
-//defines will be injected by a script that reads the .env
-//to make vscode happy and not give us errors, we predefine them here as empty strings
+//env variables for wifi credentials, defined in the .env file
+//to make vscode happy, we need to predefine them here as well, otherwise we get a warning that they are not defined
 #ifndef CONFIG_WIFI_SSID
   #define CONFIG_WIFI_SSID ""
 #endif
@@ -20,17 +20,20 @@
   #define CONFIG_WIFI_PASSWORD ""
 #endif
 
-#define WIFI_SSID CONFIG_WIFI_SSID
-#define WIFI_PASSWORD CONFIG_WIFI_PASSWORD
-#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_SSID CONFIG_WIFI_SSID // WiFi SSID to connect to
+#define WIFI_PASSWORD CONFIG_WIFI_PASSWORD // WiFi password
 
-static EventGroupHandle_t wifi_event_group;
-static esp_netif_t *wifi_netif;
+#define I2C_SDA_GPIO 1 // GPIO number for I2C SDA line
+#define I2C_SCL_GPIO 2 // GPIO number for I2C SCL line
+#define OLED_ADDR 0x3C // I2C address of the OLED display
+
+#define WIFI_CONNECTED_BIT BIT0 // Bit in eventgroup to indicate WiFi connection status
+
+static EventGroupHandle_t wifi_event_group; // Event group to signal when WiFi is connected
+static esp_netif_t *wifi_netif; // Network interface handle for WiFi
 
 // WiFi event handler
 static void wifi_handler(void *arg, esp_event_base_t base, int32_t id, void *data) {
-    // Handle WiFi events: start, disconnect, and got IP
-
     // When WiFi starts, attempt to connect
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
@@ -96,7 +99,7 @@ void synch_callback() {
         write_to_oled(beats_str, "");
 }
 void app_main(void) {
-    initialize_oled();
+    initialize_oled(OLED_ADDR, I2C_SDA_GPIO, I2C_SCL_GPIO);
     wifi_start();
 
     ESP_LOGI("WIFI", "Connecting to %s...", WIFI_SSID);
