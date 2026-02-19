@@ -54,7 +54,7 @@ static void wifi_handler(void *arg, esp_event_base_t base, int32_t id, void *dat
 // Function to start WiFi connection
 static void wifi_start(void) {
     // Initialize NVS, network interface, and event loop
-    nvs_flash_init();
+    nvs_flash_init(); //nvs is used by wifi to store credentials and other data, nvs is used because it is non-volatile storage, so it can store data even when the device is powered off, witch is helpful for wifi credentials and other data that we want to persist
     esp_netif_init();
     esp_event_loop_create_default();
     wifi_netif = esp_netif_create_default_wifi_sta();
@@ -87,18 +87,27 @@ void synch_callback() {
         time(&now); // Get the current time in seconds since the epoch
         localtime_r(&now, &timeinfo); // Convert the time in seconds to broken-down time (year, month, day, etc.) in the local timezone
         seconds = timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 3600; // Extract the seconds component from the broken-down time
-        beats = seconds / 86400.0f * 1000.0f; // Convert seconds to beats (1 day = 1000 beats)
+        beats = seconds / 86400.0f * 1000.0f; // Convert seconds to beats (1 day = 1000 beats = 86400 seconds)
         ESP_LOGI("SNTP", "The current beats is: %.2f", beats);
+
+        //write the beats to the OLED display
+        char beats_str[16]; // buffer to hold the formatted beats string
+        snprintf(beats_str, sizeof(beats_str), "beats: %.2f", beats); // Format the beats value into a string
+        write_to_oled(beats_str, "");
 }
 void app_main(void) {
+    initialize_oled();
     wifi_start();
+
     ESP_LOGI("WIFI", "Connecting to %s...", WIFI_SSID);
 
+    // Wait for the WiFi connection to be established, with a timeout of 15 seconds
     if (!(xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(15000)) & WIFI_CONNECTED_BIT)) {
         ESP_LOGI("WIFI", "Failed to connect to WiFi within the timeout period");
         return;
     }
     
+    // Set up SNTP to synchronize time with an NTP server
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "pool.ntp.org");
     esp_sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
@@ -107,7 +116,14 @@ void app_main(void) {
     setenv("TZ", "UTC-1", 1); // Set the timezone to UTC-1
     tzset(); // Apply the timezone setting
 
-    sntp_set_time_sync_notification_cb(synch_callback);
+    sntp_set_time_sync_notification_cb(synch_callback); // Register the callback function to be called when time is synchronized
     sntp_set_sync_interval(10000); // Set the synchronization interval to 10 seconds
+
+    ESP_LOGI("SNTP", "SNTP initialized, waiting for time synchronization...");
+
+    if (timeinfo.tm_year < (2026 - 1900))
+    {
+        ESP_LOGI("SNTP", "Time is not synchronized yet");
+    }
 }
 
