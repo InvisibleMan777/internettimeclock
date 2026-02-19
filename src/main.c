@@ -11,6 +11,15 @@
 #include "esp_sntp.h"
 #include "esp_http_client.h"
 
+//defines will be injected by a script that reads the .env
+//to make vscode happy and not give us errors, we predefine them here as empty strings
+#ifndef CONFIG_WIFI_SSID
+  #define CONFIG_WIFI_SSID ""
+#endif
+#ifndef CONFIG_WIFI_PASSWORD
+  #define CONFIG_WIFI_PASSWORD ""
+#endif
+
 #define WIFI_SSID CONFIG_WIFI_SSID
 #define WIFI_PASSWORD CONFIG_WIFI_PASSWORD
 #define WIFI_CONNECTED_BIT BIT0
@@ -83,9 +92,10 @@ void synch_callback() {
 }
 void app_main(void) {
     wifi_start();
+    ESP_LOGI("WIFI", "Connecting to %s...", WIFI_SSID);
 
     if (!(xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(15000)) & WIFI_CONNECTED_BIT)) {
-        write_to_oled("WiFi Failed", "");
+        ESP_LOGI("WIFI", "Failed to connect to WiFi within the timeout period");
         return;
     }
     
