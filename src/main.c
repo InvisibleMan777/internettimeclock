@@ -20,10 +20,15 @@
 #define I2C_SCL_GPIO 2 // GPIO number for I2C SCL line
 #define OLED_ADDR 0x3C // I2C address of the OLED display
 
+#define CLOCK_CYCLE_LED_GPIO 35 // GPIO number for the LED that indicates clock cycles
+#define NETWORK_STATUS_LED_GPIO 36 // GPIO number for the LED that indicates network status
+
 #define WIFI_CONNECTED_BIT BIT0 // Bit in eventgroup to indicate WiFi connection status
 
 static EventGroupHandle_t wifi_event_group; // Event group to signal when WiFi is connected
-static QueueHandle_t time_networkstatus_queue; // Queue to hold time and network status updates
+
+static QueueHandle_t time_networkstatus_display_queue; // Queue to hold time and network status updates
+static struct time_networkstatus_display_args time_networkstatus_display_args; // Structure to hold arguments for the time and network status display task
 
 static esp_netif_t *wifi_netif; // Network interface handle for WiFi
 
@@ -79,7 +84,7 @@ static void wifi_start(void) {
 void synch_callback() {
     time_t now;
     struct tm timeinfo;
-    struct time_networkstatus_display display_data;
+    struct time_networkstatus_display_data display_data;
 
     // Set the network status to CONNECTED (since we are able to synchronize time, we can assume we are connected to the internet)
     display_data.status = CONNECTED;
@@ -93,32 +98,25 @@ void synch_callback() {
 
     // Send the updated time and network status to the queue for display
     xQueueSendToBack(
-        time_networkstatus_queue, // Queue to send time and network status updates
+        time_networkstatus_display_queue, // Queue to send time and network status updates
         &display_data, // Data to send (current beats and network status)
         pdMS_TO_TICKS(100000) // Wait up to 100 second for space in the queue
     );
 }
 
-// Function to set up the time and network status display task
-void set_up_time_networkstatus_display() {
-    // Initalize queue to hold time and network status updates
-    time_networkstatus_queue = xQueueCreate(10, sizeof(struct time_networkstatus_display));
-
-    // Create a task to handle displaying time and network status
-    xTaskCreate(
-        task_time_networkstatus_display, // Task function
-        "time_networkstatus_display", // Name
-        4096, // Stack size
-        (void *) time_networkstatus_queue, // arguments, we pass the queue handle to the task so it can receive updates
-        1, // Priority
-        NULL // Task handle (not used in this case)
-    );
-}
-
 void app_main(void) {
+    // Initialize the OLED display
     initialize_oled(OLED_ADDR, I2C_SDA_GPIO, I2C_SCL_GPIO);
-    set_up_time_networkstatus_display();
 
+    // Set up the time and network status display task
+    time_networkstatus_display_args = (struct time_networkstatus_display_args) {
+        .queue = &time_networkstatus_display_queue,
+        .clock_cycle_led_gpio = CLOCK_CYCLE_LED_GPIO,
+        .network_status_led_gpio = NETWORK_STATUS_LED_GPIO
+    };
+    set_up_time_networkstatus_display(&time_networkstatus_display_args);
+
+    // Start WiFi connection
     wifi_start();
 
     ESP_LOGI("WIFI", "Connecting to %s...", WIFI_SSID);
