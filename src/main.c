@@ -45,11 +45,11 @@ static void wifi_handler(void *arg, esp_event_base_t base, int32_t id, void *dat
 
     // When we get an IP, set the DNS server (hotspots have DNS assign issues, so we set it manualy to Google's public DNS) and set the connected bit
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        // esp_netif_dns_info_t dns_set = {0};
-        // ip4_addr_t ip4 = {0};
-        // ip4addr_aton("8.8.8.8", &ip4);
-        // dns_set.ip.u_addr.ip4.addr = ip4.addr;
-        // esp_netif_set_dns_info(wifi_netif, ESP_NETIF_DNS_MAIN, &dns_set);
+        esp_netif_dns_info_t dns_set = {0};
+        ip4_addr_t ip4 = {0};
+        ip4addr_aton("8.8.8.8", &ip4);
+        dns_set.ip.u_addr.ip4.addr = ip4.addr;
+        esp_netif_set_dns_info(wifi_netif, ESP_NETIF_DNS_MAIN, &dns_set);
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }

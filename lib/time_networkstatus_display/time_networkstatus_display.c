@@ -22,15 +22,14 @@ void task_time_networkstatus_display(void *args) {
     while(1) {
         // Wait for time and network status updates from the queue
         xQueueReceive(
-            *time_networkstatus_display_args->queue, // Queue to receive time and network status updates
+            *time_networkstatus_display_args->queue, // Queue
             &display_data, // Buffer to hold the received data
             portMAX_DELAY // Wait indefinitely for data to be available
         );
 
         // Format the time value into a string
-        char beats_str[16]; // buffer to hold the formatted beats string
+        char beats_str[16]; // buffer to hold the formatted time string
         snprintf(beats_str, sizeof(beats_str), "beats: %.2f", display_data.beats); // Format the beats value into a string
-        ESP_LOGI("DISPLAY", "Received beats: %.2f", display_data.beats); // Log the received beats value for debugging
 
         // format the network status into a string
         char status_str[23]; // buffer to hold the formatted network status string
