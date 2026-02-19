@@ -10,16 +10,9 @@
 #include "esp_netif_sntp.h"
 #include "esp_sntp.h"
 #include "esp_http_client.h"
+#include "time_networkstatus_display.h"
 
-//env variables for wifi credentials, defined in the .env file
-//to make vscode happy, we need to predefine them here as well, otherwise we get a warning that they are not defined
-#ifndef CONFIG_WIFI_SSID
-  #define CONFIG_WIFI_SSID ""
-#endif
-#ifndef CONFIG_WIFI_PASSWORD
-  #define CONFIG_WIFI_PASSWORD ""
-#endif
-
+// env variables for wifi credentials, set in the .env file
 #define WIFI_SSID CONFIG_WIFI_SSID // WiFi SSID to connect to
 #define WIFI_PASSWORD CONFIG_WIFI_PASSWORD // WiFi password
 
@@ -30,6 +23,8 @@
 #define WIFI_CONNECTED_BIT BIT0 // Bit in eventgroup to indicate WiFi connection status
 
 static EventGroupHandle_t wifi_event_group; // Event group to signal when WiFi is connected
+static QueueHandle_t time_networkstatus_queue; // Queue to hold time and network status updates
+
 static esp_netif_t *wifi_netif; // Network interface handle for WiFi
 
 // WiFi event handler
@@ -80,26 +75,50 @@ static void wifi_start(void) {
     esp_wifi_start();
 }
 
-time_t now; // current time in seconds since the epoch
-char strftime_buf[64]; // buffer to hold the formatted date/time string
-struct tm timeinfo; // structure to hold the broken-down time components
-uint32_t seconds; // variable to hold the total seconds since midnight
-float beats; // variable to hold the calculated beats
-
+// Callback function to be called when SNTP time synchronization occurs
 void synch_callback() {
-        time(&now); // Get the current time in seconds since the epoch
-        localtime_r(&now, &timeinfo); // Convert the time in seconds to broken-down time (year, month, day, etc.) in the local timezone
-        seconds = timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 3600; // Extract the seconds component from the broken-down time
-        beats = seconds / 86400.0f * 1000.0f; // Convert seconds to beats (1 day = 1000 beats = 86400 seconds)
-        ESP_LOGI("SNTP", "The current beats is: %.2f", beats);
+    time_t now;
+    struct tm timeinfo;
+    struct time_networkstatus_display display_data;
 
-        //write the beats to the OLED display
-        char beats_str[16]; // buffer to hold the formatted beats string
-        snprintf(beats_str, sizeof(beats_str), "beats: %.2f", beats); // Format the beats value into a string
-        write_to_oled(beats_str, "");
+    // Set the network status to CONNECTED (since we are able to synchronize time, we can assume we are connected to the internet)
+    display_data.status = CONNECTED;
+    time(&now); // Get the current time in seconds since the epoch
+    localtime_r(&now, &timeinfo); // Convert the time in seconds to broken-down time (year, month, day, etc.) in the local timezone
+
+    uint32_t seconds = timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 3600; // daytime in seconds since midnight
+    display_data.beats = seconds / 86400.0f * 1000.0f; // Convert seconds to beats (1 day = 1000 beats = 86400 seconds)
+    
+    ESP_LOGI("SNTP", "The current beats is: %.2f", display_data.beats);
+
+    // Send the updated time and network status to the queue for display
+    xQueueSendToBack(
+        time_networkstatus_queue, // Queue to send time and network status updates
+        &display_data, // Data to send (current beats and network status)
+        pdMS_TO_TICKS(100000) // Wait up to 100 second for space in the queue
+    );
 }
+
+// Function to set up the time and network status display task
+void set_up_time_networkstatus_display() {
+    // Initalize queue to hold time and network status updates
+    time_networkstatus_queue = xQueueCreate(10, sizeof(struct time_networkstatus_display));
+
+    // Create a task to handle displaying time and network status
+    xTaskCreate(
+        task_time_networkstatus_display, // Task function
+        "time_networkstatus_display", // Name
+        4096, // Stack size
+        (void *) time_networkstatus_queue, // arguments, we pass the queue handle to the task so it can receive updates
+        1, // Priority
+        NULL // Task handle (not used in this case)
+    );
+}
+
 void app_main(void) {
     initialize_oled(OLED_ADDR, I2C_SDA_GPIO, I2C_SCL_GPIO);
+    set_up_time_networkstatus_display();
+
     wifi_start();
 
     ESP_LOGI("WIFI", "Connecting to %s...", WIFI_SSID);
@@ -121,12 +140,5 @@ void app_main(void) {
 
     sntp_set_time_sync_notification_cb(synch_callback); // Register the callback function to be called when time is synchronized
     sntp_set_sync_interval(10000); // Set the synchronization interval to 10 seconds
-
-    ESP_LOGI("SNTP", "SNTP initialized, waiting for time synchronization...");
-
-    if (timeinfo.tm_year < (2026 - 1900))
-    {
-        ESP_LOGI("SNTP", "Time is not synchronized yet");
-    }
 }
 

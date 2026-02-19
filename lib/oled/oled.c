@@ -223,7 +223,7 @@ int write_to_oled(const char *line1, const char *line2) {
     // Write some text to the OLED buffer
     oled_clear_buffer();
     oled_write_string_page(0, 0, line1);
-    oled_write_string_page(0, 1, line2);
+    oled_write_string_page(0, 2, line2);
 
     // Draw the OLED buffer to the display
     ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, OLED_WIDTH, OLED_HEIGHT, oled_buffer));
