@@ -12,7 +12,7 @@ void task_time_networkstatus_display(void *args) {
 
     // Configure the GPIO pins for the clock cycle LED and network status LED
     gpio_config_t io_conf = {};
-    io_conf.pin_bit_mask = ((1ULL<<time_networkstatus_display_args->clock_cycle_led_gpio)|(1ULL<<time_networkstatus_display_args->network_status_led_gpio)); //bit mask
+    io_conf.pin_bit_mask = ((1ULL<<time_networkstatus_display_args->clock_cycle_led_gpio) | (1ULL<<time_networkstatus_display_args->networkstatus_led_gpio)); //bit mask
     io_conf.mode = GPIO_MODE_OUTPUT;
     io_conf.pull_up_en = 0;
     io_conf.pull_down_en = 0;
@@ -28,8 +28,8 @@ void task_time_networkstatus_display(void *args) {
         );
 
         // Format the time value into a string
-        char beats_str[16]; // buffer to hold the formatted time string
-        snprintf(beats_str, sizeof(beats_str), "beats: %.2f", display_data.beats); // Format the beats value into a string
+        char beats_str[40]; // buffer to hold the formatted time string
+        snprintf(beats_str, sizeof(beats_str), "beats: @%.2f", display_data.beat_time / 100.0f);
 
         // format the network status into a string
         char status_str[23]; // buffer to hold the formatted network status string
@@ -58,9 +58,9 @@ void task_time_networkstatus_display(void *args) {
         if (display_data.status != current_network_status) {
             // Update the network status LED based on the current network status
             if (display_data.status == CONNECTED) {
-                gpio_set_level(time_networkstatus_display_args->network_status_led_gpio, 1); // Turn on the network status LED if connected
+                gpio_set_level(time_networkstatus_display_args->networkstatus_led_gpio, 1); // Turn on the network status LED if connected
             } else {
-                gpio_set_level(time_networkstatus_display_args->network_status_led_gpio, 0); // Turn off the network status LED if not connected
+                gpio_set_level(time_networkstatus_display_args->networkstatus_led_gpio, 0); // Turn off the network status LED if not connected
             }
     
             current_network_status = display_data.status;
@@ -68,7 +68,7 @@ void task_time_networkstatus_display(void *args) {
 
         // Blink the clock cycle LED to indicate that we have updated the display
         gpio_set_level(time_networkstatus_display_args->clock_cycle_led_gpio, 1);
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(100));
         gpio_set_level(time_networkstatus_display_args->clock_cycle_led_gpio, 0);
     }
 }

@@ -1,6 +1,10 @@
 #ifndef TIME_NETWORKSTATUS_DISPLAY_H
 #define TIME_NETWORKSTATUS_DISPLAY_H
 
+#include <stdint.h>
+#include <driver/gpio.h>
+#include "time_keeping.h"
+
 enum network_status {
     CONNECTED,
     NOT_CONNECTED,
@@ -11,12 +15,12 @@ enum network_status {
 struct time_networkstatus_display_args {
     QueueHandle_t* queue; 
     gpio_num_t clock_cycle_led_gpio; 
-    gpio_num_t network_status_led_gpio;
+    gpio_num_t networkstatus_led_gpio;
 };
 
 // Structure to hold time and network status information
 struct time_networkstatus_display_data {
-    float beats; // variable to hold the calculated beats
+    beat_time_t beat_time; // variable to hold beats * 100
     enum network_status status; // variable to hold the network status
 };
 

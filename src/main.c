@@ -1,16 +1,10 @@
-#include <string.h>
-#include "esp_wifi.h"
-#include "esp_event.h"
-#include "nvs_flash.h"
-#include "esp_netif.h"
-#include "esp_crt_bundle.h"
-#include "esp_log.h"
-#include "lwip/ip4_addr.h"
+#include <esp_event.h>
+#include <esp_log.h>
+
 #include "oled.h"
-#include "esp_netif_sntp.h"
-#include "esp_sntp.h"
-#include "esp_http_client.h"
 #include "time_networkstatus_display.h"
+#include "time_keeping.h"
+#include "network_interface.h"
 
 // env variables for wifi credentials, set in the .env file
 #define WIFI_SSID CONFIG_WIFI_SSID // WiFi SSID to connect to
@@ -23,120 +17,58 @@
 #define CLOCK_CYCLE_LED_GPIO 35 // GPIO number for the LED that indicates clock cycles
 #define NETWORK_STATUS_LED_GPIO 36 // GPIO number for the LED that indicates network status
 
-#define WIFI_CONNECTED_BIT BIT0 // Bit in eventgroup to indicate WiFi connection status
-
-static EventGroupHandle_t wifi_event_group; // Event group to signal when WiFi is connected
-
-static QueueHandle_t time_networkstatus_display_queue; // Queue to hold time and network status updates
-static struct time_networkstatus_display_args time_networkstatus_display_args; // Structure to hold arguments for the time and network status display task
-
-static esp_netif_t *wifi_netif; // Network interface handle for WiFi
-
-// WiFi event handler
-static void wifi_handler(void *arg, esp_event_base_t base, int32_t id, void *data) {
-    // When WiFi starts, attempt to connect
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-
-    // If disconnected, attempt to reconnect, and clear the connected bit
-    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
-        esp_wifi_connect();
-
-    // When we get an IP, set the DNS server (hotspots have DNS assign issues, so we set it manualy to Google's public DNS) and set the connected bit
-    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        esp_netif_dns_info_t dns_set = {0};
-        ip4_addr_t ip4 = {0};
-        ip4addr_aton("8.8.8.8", &ip4);
-        dns_set.ip.u_addr.ip4.addr = ip4.addr;
-        esp_netif_set_dns_info(wifi_netif, ESP_NETIF_DNS_MAIN, &dns_set);
-        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-    }
-}
-
-// Function to start WiFi connection
-static void wifi_start(void) {
-    // Initialize NVS, network interface, and event loop
-    nvs_flash_init(); //nvs is used by wifi to store credentials and other data, nvs is used because it is non-volatile storage, so it can store data even when the device is powered off, witch is helpful for wifi credentials and other data that we want to persist
-    esp_netif_init();
-    esp_event_loop_create_default();
-    wifi_netif = esp_netif_create_default_wifi_sta();
-
-    // Create event group for WiFi connection status
-    wifi_event_group = xEventGroupCreate();
-    
-    // Initialize WiFi with default configuration
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    esp_wifi_init(&cfg);
-
-    // Register event handlers for WiFi and IP events
-    esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_handler, NULL);
-    esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_handler, NULL);
-
-    // Configure and start WiFi in station mode
-    wifi_config_t wifi_config = {.sta = {.ssid = WIFI_SSID, .password = WIFI_PASSWORD}};
-    esp_wifi_set_mode(WIFI_MODE_STA);
-    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
-    esp_wifi_start();
-}
-
-// Callback function to be called when SNTP time synchronization occurs
-void synch_callback() {
-    time_t now;
-    struct tm timeinfo;
-    struct time_networkstatus_display_data display_data;
-
-    // Set the network status to CONNECTED (since we are able to synchronize time, we can assume we are connected to the internet)
-    display_data.status = CONNECTED;
-    time(&now); // Get the current time in seconds since the epoch
-    localtime_r(&now, &timeinfo); // Convert the time in seconds to broken-down time (year, month, day, etc.) in the local timezone
-
-    uint32_t seconds = timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 3600; // daytime in seconds since midnight
-    display_data.beats = seconds / 86400.0f * 1000.0f; // Convert seconds to beats (1 day = 1000 beats = 86400 seconds)
-    
-    ESP_LOGI("SNTP", "The current beats is: %.2f", display_data.beats);
-
-    // Send the updated time and network status to the queue for display
-    xQueueSendToBack(
-        time_networkstatus_display_queue, // Queue to send time and network status updates
-        &display_data, // Data to send (current beats and network status)
-        pdMS_TO_TICKS(100000) // Wait up to 100 second for space in the queue
-    );
-}
+QueueHandle_t time_update_queue; // Queue to hold calculated time updates for display on the OLED
+QueueHandle_t time_networkstatus_display_queue; // Queue to hold time and network status updates
+struct time_networkstatus_display_args time_networkstatus_display_args; // Structure to hold arguments for the time and network status display task
 
 void app_main(void) {
     // Initialize the OLED display
     initialize_oled(OLED_ADDR, I2C_SDA_GPIO, I2C_SCL_GPIO);
+    write_to_oled("Starting...", ""); // Display "Connecting to WiFi..." on the OLED
+
+    // Start WiFi connection
+    wifi_start(WIFI_SSID, WIFI_PASSWORD);
+    write_to_oled("Connecting...", WIFI_SSID); // Display "Connecting to WiFi..." on the OLED
+
+    // Wait for the WiFi connection to be established, with a timeout of 15 seconds
+    if (!(wait_on_connection())) {
+        write_to_oled("WiFi Failed", "");
+        return;
+    }
+
+    write_to_oled("Connected", WIFI_SSID);
 
     // Set up the time and network status display task
     time_networkstatus_display_args = (struct time_networkstatus_display_args) {
         .queue = &time_networkstatus_display_queue,
         .clock_cycle_led_gpio = CLOCK_CYCLE_LED_GPIO,
-        .network_status_led_gpio = NETWORK_STATUS_LED_GPIO
+        .networkstatus_led_gpio = NETWORK_STATUS_LED_GPIO
     };
     set_up_time_networkstatus_display(&time_networkstatus_display_args);
-
-    // Start WiFi connection
-    wifi_start();
-
-    ESP_LOGI("WIFI", "Connecting to %s...", WIFI_SSID);
-
-    // Wait for the WiFi connection to be established, with a timeout of 15 seconds
-    if (!(xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, pdMS_TO_TICKS(15000)) & WIFI_CONNECTED_BIT)) {
-        ESP_LOGI("WIFI", "Failed to connect to WiFi within the timeout period");
-        return;
-    }
     
-    // Set up SNTP to synchronize time with an NTP server
-    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "pool.ntp.org");
-    esp_sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
-    esp_sntp_init();
+    set_up_time_keeping(&time_update_queue);
+    write_to_oled("Fetching...", "");
 
-    setenv("TZ", "UTC-1", 1); // Set the timezone to UTC-1
-    tzset(); // Apply the timezone setting
+    beat_time_t beat_time;
+    struct time_networkstatus_display_data time_networkstatus_display_data;
 
-    sntp_set_time_sync_notification_cb(synch_callback); // Register the callback function to be called when time is synchronized
-    sntp_set_sync_interval(10000); // Set the synchronization interval to 10 seconds
+    while (1) {
+        // Wait for time updates from the time keeping module
+        xQueueReceive(
+            time_update_queue,
+            &beat_time,
+            pdMS_TO_TICKS(5000)
+        );
+
+        time_networkstatus_display_data.beat_time = beat_time;
+        time_networkstatus_display_data.status = CONNECTED;
+
+        // Send update to the time and networkstatus display task
+        xQueueSendToBack(
+            time_networkstatus_display_queue,
+            &time_networkstatus_display_data,
+            pdMS_TO_TICKS(5000)
+        );
+    }
 }
 

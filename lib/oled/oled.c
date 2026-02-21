@@ -78,7 +78,9 @@ static const uint8_t glyph_9[5] = {0x06, 0x49, 0x49, 0x29, 0x1e};
 static const uint8_t glyph_dot[5] = {0x00, 0x00, 0x60, 0x60, 0x00};
 static const uint8_t glyph_dash[5] = {0x08, 0x08, 0x08, 0x08, 0x08};
 static const uint8_t glyph_plus[5] = {0x08, 0x08, 0x3e, 0x08, 0x08};
-static const uint8_t glyth_double_dot[5] = {0x00, 0x00, 0x66, 0x66, 0x00};
+static const uint8_t glyph_double_dot[5] = {0x00, 0x00, 0x66, 0x66, 0x00};
+static const uint8_t glyph_low_dash[5] = {0x40, 0x40, 0x40, 0x40, 0x40};
+static const uint8_t glyph_at[5] = {0x3e, 0x41, 0x5d, 0x55, 0x1e};
 
 // Function to get the glyph data for a given character
 static const uint8_t *oled_glyph_for_char(char c) {
@@ -122,7 +124,9 @@ static const uint8_t *oled_glyph_for_char(char c) {
         case '.': return glyph_dot;
         case '-': return glyph_dash;
         case '+': return glyph_plus;
-        case ':': return glyth_double_dot;
+        case ':': return glyph_double_dot;
+        case '@': return glyph_at;
+        case '_': return glyph_low_dash;
         case ' ':
         default: return glyph_space;
     }
