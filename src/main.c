@@ -5,6 +5,7 @@
 #include "time_networkstatus_display.h"
 #include "time_keeping.h"
 #include "network_interface.h"
+#include "stepper_motor.h"
 
 // env variables for wifi credentials, set in the .env file
 #define WIFI_SSID CONFIG_WIFI_SSID // WiFi SSID to connect to
@@ -18,6 +19,7 @@
 #define NETWORK_STATUS_LED_GPIO 36 // GPIO number for the LED that indicates network status
 
 QueueHandle_t time_update_queue; // Queue to hold calculated time updates for display on the OLED
+QueueHandle_t stepper_motor_queue; // Queue to hold stepper motor control commands
 QueueHandle_t time_networkstatus_display_queue; // Queue to hold time and network status updates
 struct time_networkstatus_display_args time_networkstatus_display_args; // Structure to hold arguments for the time and network status display task
 
@@ -45,7 +47,9 @@ void app_main(void) {
         .networkstatus_led_gpio = NETWORK_STATUS_LED_GPIO
     };
     set_up_time_networkstatus_display(&time_networkstatus_display_args);
-    
+
+    set_up_stepper_motor(&stepper_motor_queue);
+
     set_up_time_keeping(&time_update_queue);
     write_to_oled("Fetching...", "");
 
@@ -67,6 +71,13 @@ void app_main(void) {
         xQueueSendToBack(
             time_networkstatus_display_queue,
             &time_networkstatus_display_data,
+            pdMS_TO_TICKS(5000)
+        );
+
+        // Send a command to the stepper motor task to turn the motor (the actual value sent is not used, we just want to send something to trigger the motor)
+        xQueueSendToBack(
+            stepper_motor_queue,
+            &(uint16_t){0},
             pdMS_TO_TICKS(5000)
         );
     }
