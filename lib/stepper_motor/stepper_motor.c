@@ -3,108 +3,109 @@
 #include <math.h>
 #include "stepper_motor.h"
 
-#define STEPPER_PIN_1 GPIO_NUM_34 // GPIO pin for stepper motor coil 1
-#define STEPPER_PIN_2 GPIO_NUM_33 // GPIO pin for stepper motor coil 2
-#define STEPPER_PIN_3 GPIO_NUM_18 // GPIO pin for stepper motor coil 3
-#define STEPPER_PIN_4 GPIO_NUM_17 // GPIO pin for stepper motor coil 4
-
 void task_turn_stepper_motor(void *args) {
-    // Configure the GPIO pins for the stepper motor coils
-    QueueHandle_t *queue = (QueueHandle_t *) args; // Cast the arguments to the correct type so we can access the queue
+    struct stepper_motor_args stepper_motor_args = *(struct stepper_motor_args *) args; // Cast the arguments to the correct type so we can access the queue
 
+    // Configure the GPIO pins for the stepper motor coils
     gpio_config_t io_conf = {};
-    io_conf.pin_bit_mask = ((1ULL<<STEPPER_PIN_1) | (1ULL<<STEPPER_PIN_2) | (1ULL<<STEPPER_PIN_3) | (1ULL<<STEPPER_PIN_4)); // bit mask for the stepper motor pins
+    io_conf.pin_bit_mask = ((1ULL<<stepper_motor_args.pin1) | (1ULL<<stepper_motor_args.pin2) | (1ULL<<stepper_motor_args.pin3) | (1ULL<<stepper_motor_args.pin4)); // bit mask for the stepper motor pins
     io_conf.mode = GPIO_MODE_OUTPUT; // Set as output
     io_conf.pull_up_en = 0; // No pull-up
     io_conf.pull_down_en = 0; // No pull-down
     io_conf.intr_type = GPIO_INTR_DISABLE; // No interrupts
     gpio_config(&io_conf);
     
-    uint16_t command; // variable to hold the received command from the queue (not actually used, we just want to receive something to trigger the motor)
-    uint8_t step_position = 0; // variable to keep track of the current step position of the motor (0-3 for a 4-step sequence)
+    deca_degrees_command_stepper_t command; // variable to hold the received stepper motor control command, represents the deca-degrees to rotate the stepper motor (0 - 3600)
+    uint8_t step_position = 0; // variable to keep track of the current step position of the motor
+    uint16_t steps_to_move; // variable to hold the calculated number of steps to move based on the received command
 
     while(1) {
         xQueueReceive(
-            *queue, // Queue
-            &command, // Buffer to hold the received command (not actually used)
-            portMAX_DELAY // Wait indefinitely for a command to be available
+            *(stepper_motor_args.queue),
+            &command,
+            portMAX_DELAY
         );
 
-        for (int i = 0; i < roundf(command/0.88f); i++) { // Turn the motor for a certain number of steps (adjust as needed)
+        steps_to_move = roundf(command / 0.88f);
+
+        // We are moving the motor in half-steps, so we need to go through 8 step positions for a full cycle. The step_position variable keeps track of the current step position, and we update it in a circular manner as we move the motor.
+        for (int i = 0; i < steps_to_move; i++) {
             switch (step_position) {
                 case 0:
-                    gpio_set_level(STEPPER_PIN_1, 1);
-                    gpio_set_level(STEPPER_PIN_2, 0);
-                    gpio_set_level(STEPPER_PIN_3, 0);
-                    gpio_set_level(STEPPER_PIN_4, 0);
+                    gpio_set_level(stepper_motor_args.pin1, 1);
+                    gpio_set_level(stepper_motor_args.pin2, 0);
+                    gpio_set_level(stepper_motor_args.pin3, 0);
+                    gpio_set_level(stepper_motor_args.pin4, 0);
                     step_position = 1;
                     break;
                 case 1:
-                    gpio_set_level(STEPPER_PIN_1, 1);
-                    gpio_set_level(STEPPER_PIN_2, 1);
-                    gpio_set_level(STEPPER_PIN_3, 0);
-                    gpio_set_level(STEPPER_PIN_4, 0);
+                    gpio_set_level(stepper_motor_args.pin1, 1);
+                    gpio_set_level(stepper_motor_args.pin2, 1);
+                    gpio_set_level(stepper_motor_args.pin3, 0);
+                    gpio_set_level(stepper_motor_args.pin4, 0);
                     step_position = 2;
                     break;
                 case 2:
-                    gpio_set_level(STEPPER_PIN_1, 0);
-                    gpio_set_level(STEPPER_PIN_2, 1);
-                    gpio_set_level(STEPPER_PIN_3, 0);
-                    gpio_set_level(STEPPER_PIN_4, 0);
+                    gpio_set_level(stepper_motor_args.pin1, 0);
+                    gpio_set_level(stepper_motor_args.pin2, 1);
+                    gpio_set_level(stepper_motor_args.pin3, 0);
+                    gpio_set_level(stepper_motor_args.pin4, 0);
                     step_position = 3;
                     break;
                 case 3:
     
-                    gpio_set_level(STEPPER_PIN_1, 0);
-                    gpio_set_level(STEPPER_PIN_2, 1);
-                    gpio_set_level(STEPPER_PIN_3, 1);
-                    gpio_set_level(STEPPER_PIN_4, 0);
+                    gpio_set_level(stepper_motor_args.pin1, 0);
+                    gpio_set_level(stepper_motor_args.pin2, 1);
+                    gpio_set_level(stepper_motor_args.pin3, 1);
+                    gpio_set_level(stepper_motor_args.pin4, 0);
                     step_position = 4;
                     break;
                 case 4:
-                    gpio_set_level(STEPPER_PIN_1, 0);
-                    gpio_set_level(STEPPER_PIN_2, 0);
-                    gpio_set_level(STEPPER_PIN_3, 1);
-                    gpio_set_level(STEPPER_PIN_4, 0);
+                    gpio_set_level(stepper_motor_args.pin1, 0);
+                    gpio_set_level(stepper_motor_args.pin2, 0);
+                    gpio_set_level(stepper_motor_args.pin3, 1);
+                    gpio_set_level(stepper_motor_args.pin4, 0);
                     step_position = 5;
                     break;
                 case 5:
-                    gpio_set_level(STEPPER_PIN_1, 0);
-                    gpio_set_level(STEPPER_PIN_2, 0);
-                    gpio_set_level(STEPPER_PIN_3, 1);
-                    gpio_set_level(STEPPER_PIN_4, 1);
+                    gpio_set_level(stepper_motor_args.pin1, 0);
+                    gpio_set_level(stepper_motor_args.pin2, 0);
+                    gpio_set_level(stepper_motor_args.pin3, 1);
+                    gpio_set_level(stepper_motor_args.pin4, 1);
                     step_position = 6;
                     break;
                 case 6:
-                    gpio_set_level(STEPPER_PIN_1, 0);
-                    gpio_set_level(STEPPER_PIN_2, 0);
-                    gpio_set_level(STEPPER_PIN_3, 0);
-                    gpio_set_level(STEPPER_PIN_4, 1);
+                    gpio_set_level(stepper_motor_args.pin1, 0);
+                    gpio_set_level(stepper_motor_args.pin2, 0);
+                    gpio_set_level(stepper_motor_args.pin3, 0);
+                    gpio_set_level(stepper_motor_args.pin4, 1);
                     step_position = 7;
                     break;
                 case 7:
-                    gpio_set_level(STEPPER_PIN_1, 1);
-                    gpio_set_level(STEPPER_PIN_2, 0);
-                    gpio_set_level(STEPPER_PIN_3, 0);
-                    gpio_set_level(STEPPER_PIN_4, 1);
+                    gpio_set_level(stepper_motor_args.pin1, 1);
+                    gpio_set_level(stepper_motor_args.pin2, 0);
+                    gpio_set_level(stepper_motor_args.pin3, 0);
+                    gpio_set_level(stepper_motor_args.pin4, 1);
                     step_position = 0;
                     break;
             }
-            vTaskDelay(pdMS_TO_TICKS(10)); // Delay between steps (adjust as needed)
+
+            vTaskDelay(pdMS_TO_TICKS(10)); 
         }
     }
 }
 
-void set_up_stepper_motor(QueueHandle_t *queue) {
+void set_up_stepper_motor(struct stepper_motor_args *stepper_motor_args) {
     // Initalize a queue to send stepper motor control commands to
-    *queue = xQueueCreate(10, sizeof(uint16_t));
+    *stepper_motor_args->queue = xQueueCreate(99, sizeof(deca_degrees_command_stepper_t));
 
     // Create a task to control the stepper motor
     xTaskCreate(
-        task_turn_stepper_motor, 
-        "stepper_motor_task", 
-        2048, 
-        queue, 
-        1, 
-        NULL);
+        task_turn_stepper_motor, // Task function
+        "stepper_motor_task", // Name
+        2048, // Stack size
+        stepper_motor_args, // arguments
+        2, // Priority
+        NULL // Task handle (not used in this case)
+    ); 
 }

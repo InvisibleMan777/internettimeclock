@@ -98,7 +98,7 @@ static void init_time_counter() {
 // Function to set up time keeping, sets up the SNTP synchronization and the GPTimer for centibeat updates
 void set_up_time_keeping(QueueHandle_t *time_update_queue) {
     // Initalize a queue to send calculated times to
-    *time_update_queue = xQueueCreate(10, sizeof(beat_time_t));
+    *time_update_queue = xQueueCreate(99, sizeof(beat_time_t));
     queue = time_update_queue;
 
     // Initialize the timer to start updating the time (beats) every centibeat

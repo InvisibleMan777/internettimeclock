@@ -11,17 +11,40 @@
 #define WIFI_SSID CONFIG_WIFI_SSID // WiFi SSID to connect to
 #define WIFI_PASSWORD CONFIG_WIFI_PASSWORD // WiFi password
 
-#define I2C_SDA_GPIO 1 // GPIO number for I2C SDA line
-#define I2C_SCL_GPIO 2 // GPIO number for I2C SCL line
+// OLED Display
+#define I2C_SDA_GPIO GPIO_NUM_1 // GPIO number for I2C SDA line
+#define I2C_SCL_GPIO GPIO_NUM_2 // GPIO number for I2C SCL line
 #define OLED_ADDR 0x3C // I2C address of the OLED display
 
-#define CLOCK_CYCLE_LED_GPIO 35 // GPIO number for the LED that indicates clock cycles
-#define NETWORK_STATUS_LED_GPIO 36 // GPIO number for the LED that indicates network status
+// LEDS
+#define CLOCK_CYCLE_LED_GPIO GPIO_NUM_35 // GPIO number for the LED that indicates clock cycles
+#define NETWORK_STATUS_LED_GPIO GPIO_NUM_36 // GPIO number for the LED that indicates network status
+
+// Stepper motor
+#define STEPPER_PIN_1 GPIO_NUM_34 // GPIO pin for coil 1
+#define STEPPER_PIN_2 GPIO_NUM_33 // GPIO pin for coil 2
+#define STEPPER_PIN_3 GPIO_NUM_18 // GPIO pin for coil 3
+#define STEPPER_PIN_4 GPIO_NUM_17 // GPIO pin for coil 4
 
 QueueHandle_t time_update_queue; // Queue to hold calculated time updates for display on the OLED
 QueueHandle_t stepper_motor_queue; // Queue to hold stepper motor control commands
 QueueHandle_t time_networkstatus_display_queue; // Queue to hold time and network status updates
-struct time_networkstatus_display_args time_networkstatus_display_args; // Structure to hold arguments for the time and network status display task
+
+// Structure to hold arguments for the stepper motor control task
+struct stepper_motor_args stepper_motor_args = {
+    .queue = &stepper_motor_queue,
+    .pin1 = STEPPER_PIN_1,
+    .pin2 = STEPPER_PIN_2,
+    .pin3 = STEPPER_PIN_3,
+    .pin4 = STEPPER_PIN_4
+};
+
+// Structure to hold arguments for the time and network status display task
+struct time_networkstatus_display_args time_networkstatus_display_args = {
+    .queue = &time_networkstatus_display_queue,
+    .clock_cycle_led_gpio = CLOCK_CYCLE_LED_GPIO,
+    .networkstatus_led_gpio = NETWORK_STATUS_LED_GPIO
+};
 
 void app_main(void) {
     // Initialize the OLED display
@@ -40,18 +63,9 @@ void app_main(void) {
 
     write_to_oled("Connected", WIFI_SSID);
 
-    // Set up the time and network status display task
-    time_networkstatus_display_args = (struct time_networkstatus_display_args) {
-        .queue = &time_networkstatus_display_queue,
-        .clock_cycle_led_gpio = CLOCK_CYCLE_LED_GPIO,
-        .networkstatus_led_gpio = NETWORK_STATUS_LED_GPIO
-    };
     set_up_time_networkstatus_display(&time_networkstatus_display_args);
-
-    set_up_stepper_motor(&stepper_motor_queue);
-
+    set_up_stepper_motor(&stepper_motor_args);
     set_up_time_keeping(&time_update_queue);
-    write_to_oled("Fetching...", "");
 
     beat_time_t beat_time = 0;
     beat_time_t last_beat_time = 0;
@@ -83,13 +97,14 @@ void app_main(void) {
             last_beat_time = beat_time;
         }
 
-        // Send a command to the stepper motor task to turn the motor (the actual value sent is not used, we just want to send something to trigger the motor)
+        // Send a command to the stepper motor task to turn the motor
         xQueueSendToBack(
             stepper_motor_queue,
-            &(uint16_t){36* (beat_time - last_beat_time)}, // Move a step (3,6 degrees) for every centibeat
-            pdMS_TO_TICKS(1000*(beat_time - last_beat_time))
+            &(deca_degrees_command_stepper_t){36 * (beat_time - last_beat_time)}, // Move a step (3,6 degrees) for every centibeat
+            pdMS_TO_TICKS(1000)
         );
 
+        // Update last_beat_time to the current beat_time for the next iteration
         last_beat_time = beat_time;
     }
 }
