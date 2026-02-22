@@ -53,7 +53,8 @@ void app_main(void) {
     set_up_time_keeping(&time_update_queue);
     write_to_oled("Fetching...", "");
 
-    beat_time_t beat_time;
+    beat_time_t beat_time = 0;
+    beat_time_t last_beat_time = 0;
     struct time_networkstatus_display_data time_networkstatus_display_data;
 
     while (1) {
@@ -61,7 +62,7 @@ void app_main(void) {
         xQueueReceive(
             time_update_queue,
             &beat_time,
-            pdMS_TO_TICKS(5000)
+            pdMS_TO_TICKS(1000)
         );
 
         time_networkstatus_display_data.beat_time = beat_time;
@@ -71,15 +72,25 @@ void app_main(void) {
         xQueueSendToBack(
             time_networkstatus_display_queue,
             &time_networkstatus_display_data,
-            pdMS_TO_TICKS(5000)
+            pdMS_TO_TICKS(1000)
         );
+
+        // Initialize last_beat_time on the first run by setting it to the current beat_time so that the diffrence is 0
+        // If the time is earlier then before (wich can happen after a synch), we set also set the diffrence to 0 so that the motor stays still till the time has cached up with the position of the motor
+        // The exception to this is if the time goes from 999.99 to 0, in wich case we DO want the motor to move forward one step
+
+        if (last_beat_time == 0 || (beat_time < last_beat_time && beat_time != 0)) {
+            last_beat_time = beat_time;
+        }
 
         // Send a command to the stepper motor task to turn the motor (the actual value sent is not used, we just want to send something to trigger the motor)
         xQueueSendToBack(
             stepper_motor_queue,
-            &(uint16_t){0},
-            pdMS_TO_TICKS(5000)
+            &(uint16_t){36* (beat_time - last_beat_time)}, // Move a step (3,6 degrees) for every centibeat
+            pdMS_TO_TICKS(1000*(beat_time - last_beat_time))
         );
+
+        last_beat_time = beat_time;
     }
 }
 

@@ -1,5 +1,6 @@
 #include <driver/gpio.h>
 #include <esp_event.h>
+#include <math.h>
 #include "stepper_motor.h"
 
 #define STEPPER_PIN_1 GPIO_NUM_34 // GPIO pin for stepper motor coil 1
@@ -29,7 +30,7 @@ void task_turn_stepper_motor(void *args) {
             portMAX_DELAY // Wait indefinitely for a command to be available
         );
 
-        for (int i = 0; i < 41; i++) { // Turn the motor for a certain number of steps (adjust as needed)
+        for (int i = 0; i < roundf(command/0.88f); i++) { // Turn the motor for a certain number of steps (adjust as needed)
             switch (step_position) {
                 case 0:
                     gpio_set_level(STEPPER_PIN_1, 1);

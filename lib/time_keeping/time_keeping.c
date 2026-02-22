@@ -26,7 +26,14 @@ void synch_callback() {
     uint32_t seconds = timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 3600;
 
     // Convert to centibeats (1 centibeat = 0.00864 seconds)
-    beat_time = seconds / 0.864f; 
+    beat_time_t buffer_beat_time = seconds / 0.864f; 
+
+    // Sometimes we get a bullshit response when sychronizing, so we just ignore that
+    if (buffer_beat_time >= 100000) {
+        return;
+    }
+
+    beat_time = buffer_beat_time;
 
     // Start the clock on the first synchronization
     if (first_synch_completed == false) {
