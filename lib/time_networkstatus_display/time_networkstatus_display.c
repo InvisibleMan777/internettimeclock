@@ -4,6 +4,7 @@
 #include "esp_event.h"
 #include "driver/gpio.h"
 #include "time_networkstatus_display.h"
+#include "network_interface.h"
 
 void task_time_networkstatus_display(void *args) {
     struct time_networkstatus_display_args time_networkstatus_display_args = *(struct time_networkstatus_display_args *) args; // cast the arguments to the correct type so we can access the queue and GPIO numbers
@@ -44,11 +45,11 @@ void task_time_networkstatus_display(void *args) {
             case NOT_AVAILABLE:
                 snprintf(status_str, sizeof(status_str), "status: NOT_AVAILABLE");
                 break;
-            case CONNECTING:
-                snprintf(status_str, sizeof(status_str), "status: CONNECTING");
+            case ERROR:
+                snprintf(status_str, sizeof(status_str), "status: ERROR");
                 break;
             default:
-                snprintf(status_str, sizeof(status_str), "status: UNKNOWN");
+                snprintf(status_str, sizeof(status_str), "status: ERROR");
                 break;
         }
 

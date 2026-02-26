@@ -9,8 +9,11 @@
 
 beat_time_t beat_time = 0; // Time in amounth of centibeats
 static gptimer_handle_t centibeat_timer; // GPTimer handle for centibeat updates
-bool first_synch_completed = false; // Flag to indicate if the first SNTP synchronization has completed
 QueueHandle_t *queue; // Queue to send time updates to the main controller
+
+bool synch_enabled = false; // Variable to indicate whether SNTP synchronization is enabled
+bool start_time_keeping_on_synch = false; // Variable to indicate whether to start the time keeping when the first SNTP synchronization occurs
+bool synch_started = false; // Variable to indicate whether the first SNTP synchronization has occurred
 
 // Callback function to be called when SNTP time synchronization occurs
 void synch_callback() {
@@ -26,19 +29,12 @@ void synch_callback() {
     uint32_t seconds = timeinfo.tm_sec + timeinfo.tm_min * 60 + timeinfo.tm_hour * 3600;
 
     // Convert to centibeats (1 centibeat = 0.00864 seconds)
-    beat_time_t buffer_beat_time = seconds / 0.864f; 
+    beat_time = seconds / 0.864f; 
 
-    // Sometimes we get a bullshit response when sychronizing, so we just ignore that
-    if (buffer_beat_time >= 100000) {
-        return;
-    }
-
-    beat_time = buffer_beat_time;
-
-    // Start the clock on the first synchronization
-    if (first_synch_completed == false) {
-        gptimer_start(centibeat_timer);
-        first_synch_completed = true;
+    // Start the time keeping if the flag to start on synchronization is set and synchronization has not yet started
+    if (start_time_keeping_on_synch == true && synch_started == false) {
+        start_time_keeping();
+        synch_started = true;
     }
 }
 
@@ -103,8 +99,11 @@ void set_up_time_keeping(QueueHandle_t *time_update_queue) {
 
     // Initialize the timer to start updating the time (beats) every centibeat
     init_time_counter();
+}
 
-    // Set up SNTP to synchronize time with an NTP server
+// Function to enable SNTP synchronization and set the callback function to be called when synchronization occurs
+void enable_sntp_sync() {
+     // Set up SNTP to synchronize time with an NTP server
     esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
     esp_sntp_setservername(0, "pool.ntp.org");
     esp_sntp_set_sync_mode(SNTP_SYNC_MODE_IMMED);
@@ -115,4 +114,39 @@ void set_up_time_keeping(QueueHandle_t *time_update_queue) {
 
     sntp_set_time_sync_notification_cb(synch_callback); // Register the callback function to be called when time is synchronized
     sntp_set_sync_interval(10000); // Set the synchronization interval to 10 seconds
+    synch_enabled = true;
+}
+
+// Function to restart SNTP synchronization
+void restart_sntp_synch() {
+    if (!synch_enabled) {
+        enable_sntp_sync();
+        synch_enabled = true;
+    } else {
+        esp_sntp_restart();
+    }
+}
+
+// Function to start the time keeping by starting the GPTimer
+void start_time_keeping() {
+    gptimer_start(centibeat_timer);
+}
+
+// Function to stop the time keeping by stopping the GPTimer
+void stop_time_keeping() {
+    gptimer_stop(centibeat_timer);
+}
+
+//enables flag that indicates to start the time keeping when the first SNTP synchronization occurs
+void start_time_keeping_on_sync() {
+    start_time_keeping_on_synch = true;
+}
+
+//util function to calculate the intervals between two beat times on a clock in both directions (clockwise and anti-clockwise)
+struct time_intervals calculate_clock_intervals(beat_time_t time_1, beat_time_t time_2) {
+    // we modulo the results with 100 so that we get the intervals looking only at the centibeats
+    uint32_t interval_anti_clockwise = (time_1 > time_2 ? time_1 - time_2 : 100000 - time_2 + time_1) % 100;
+    uint32_t interval_clockwise = (time_1 > time_2 ? 100000 - time_1 + time_2: time_2 - time_1) % 100;
+
+    return (struct time_intervals){.anti_clockwise_interval = interval_anti_clockwise, .clockwise_interval = interval_clockwise};
 }

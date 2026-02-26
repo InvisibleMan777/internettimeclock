@@ -4,13 +4,7 @@
 #include <stdint.h>
 #include <driver/gpio.h>
 #include "time_keeping.h"
-
-enum network_status {
-    CONNECTED,
-    NOT_CONNECTED,
-    NOT_AVAILABLE,
-    CONNECTING,
-};
+#include "network_interface.h"
 
 struct time_networkstatus_display_args {
     QueueHandle_t* queue; 
