@@ -6,7 +6,7 @@
 #include "time_keeping.h"
 #include "network_interface.h"
 #include "stepper_motor.h"
-#include <math.h>
+#include "stepper_motor_position_set_control.h"
 
 // env variables for wifi credentials, set in the .env file
 #define WIFI_SSID CONFIG_WIFI_SSID // WiFi SSID to connect to
@@ -20,6 +20,7 @@
 // LEDS IO
 #define CLOCK_CYCLE_LED_GPIO GPIO_NUM_35 // GPIO number for the LED that indicates clock cycles
 #define NETWORK_STATUS_LED_GPIO GPIO_NUM_36 // GPIO number for the LED that indicates network status
+#define MODE_LED_GPIO GPIO_NUM_37 // GPIO number for the LED that indicates the current mode of the stepper motor (on for time setting mode, off for normal operation)
 
 // Stepper motor IO
 #define STEPPER_PIN_1 GPIO_NUM_34 // GPIO pin for coil 1
@@ -27,19 +28,35 @@
 #define STEPPER_PIN_3 GPIO_NUM_18 // GPIO pin for coil 3
 #define STEPPER_PIN_4 GPIO_NUM_17 // GPIO pin for coil 4
 
+// Rotery encoder IO for stepper motor position set control
+#define ROTARY_ENCODER_PIN_A GPIO_NUM_4 // GPIO pin for rotary encoder pin A
+#define ROTARY_ENCODER_PIN_B GPIO_NUM_5 // GPIO pin for rotary encoder pin B
+#define MODE_BUTTON_PIN GPIO_NUM_7 // GPIO pin for the button to change modes
+
 // Task communication queues
 QueueHandle_t time_update_queue; // Time keeping module sends time updates to the main controller through this queue
-QueueHandle_t stepper_motor_queue; // The main controller sends stepper motor control commands to the stepper motor control task through this queue, the command represents the deca-degrees to rotate the stepper motor (0 - 3600)
-QueueHandle_t time_networkstatus_display_queue; // The main controller sends time and network status updates to the time and network status display task through this queue, which will display it on the OLED LCD and update the network status LED
 QueueHandle_t networkstatus_message_box; // The network interface task updates the current network status, wich the the main controller can read through this queue/messagebox,it uses it to decide what to display on the OLED and whether to reset SNTP synchronization when connection is (re-)established
+QueueHandle_t stepper_motor_mode_message_box; // The stepper motor position set control task sends the current mode of the stepper motor (normal operation or time setting mode) to the main controller through this queue/messagebox
+QueueHandle_t stepper_motor_command_queue; // The main controller sends commands to the stepper motor task through this queue, the command represents the deca-degrees to rotate the stepper motor (0 - 3600)
+QueueHandle_t time_networkstatus_display_queue; // The main controller sends time and network status updates to the time and network status display task through this queue, which will display it on the OLED LCD and update the network status LED
 
-// Structure to hold arguments for the stepper motor control task
+// Structure to hold arguments for the stepper motor task
 struct stepper_motor_args stepper_motor_args = {
-    .queue = &stepper_motor_queue,
+    .queue = &stepper_motor_command_queue,
     .pin1 = STEPPER_PIN_1,
     .pin2 = STEPPER_PIN_2,
     .pin3 = STEPPER_PIN_3,
     .pin4 = STEPPER_PIN_4
+};
+
+// Structure to hold arguments for the stepper motor position set control task
+struct stepper_motor_position_set_control_args stepper_motor_position_set_control_args = {
+    .stepper_motor_mode_message_box = &stepper_motor_mode_message_box,
+    .stepper_motor_command_queue = &stepper_motor_command_queue,
+    .button_pin = MODE_BUTTON_PIN, // GPIO pin for the button to change modes
+    .led_pin = MODE_LED_GPIO, // GPIO pin for the LED to indicate the current mode (on for time setting mode, off for normal operation)
+    .rotery_encoder_pin_a = ROTARY_ENCODER_PIN_A, // GPIO pin for the rotary encoder pin A
+    .rotery_encoder_pin_b = ROTARY_ENCODER_PIN_B // GPIO pin for the rotary encoder pin B
 };
 
 // Structure to hold arguments for the time and network status display task
@@ -57,6 +74,7 @@ void app_main(void) {
     // Initialize tasks
     set_up_time_networkstatus_display(&time_networkstatus_display_args);
     set_up_stepper_motor(&stepper_motor_args);
+    set_up_stepper_motor_position_set_control(&stepper_motor_position_set_control_args);
     set_up_time_keeping(&time_update_queue);
 
     // Start WiFi connection
@@ -112,10 +130,10 @@ void app_main(void) {
         // If the clockwise interval from time on the stepper motor to the current time is smaller, move the stepper motor clockwise to the right time
         // If the anti-clockwise interval is smaller, wait until the current time is the same or past the time on the stepper motor,
         // we specificly do not move the stepper motor anti-clockwise, because that would just look bad and be confusing on a clock
-        if (clock_intervals.clockwise_interval < clock_intervals.anti_clockwise_interval) {
+        if (clock_intervals.clockwise_interval < clock_intervals.anti_clockwise_interval && 0) {
             xQueueSendToBack(
-                stepper_motor_queue,
-                &(deca_degrees_command_stepper_t){36 * (clock_intervals.clockwise_interval)}, // Move a step (3,6 degrees) for every centibeat
+                stepper_motor_command_queue,
+                &((struct stepper_motor_command){.command = 36 * (clock_intervals.clockwise_interval), .reverse = false}), // Move a step (3,6 degrees) for every centibeat
                 pdMS_TO_TICKS(1000)
             );
 

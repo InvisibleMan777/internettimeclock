@@ -17,4 +17,10 @@ void set_up_stepper_motor(struct stepper_motor_args *args); // Function to set u
 // type to represent stepper motor control commands, represents the deca-degrees to rotate the stepper motor (0 - 3600)
 typedef uint16_t deca_degrees_command_stepper_t; 
 
+// Structure to represent a stepper motor control command, which includes the command itself (the deca-degrees to rotate the stepper motor) and a flag to indicate whether to rotate in reverse (anti-clockwise) or not (clockwise)
+struct stepper_motor_command {
+    deca_degrees_command_stepper_t command; // Command to rotate the stepper motor, represents the deca-degrees to rotate the stepper motor (0 - 3600)
+    bool reverse; // Flag to indicate whether to rotate the stepper motor in reverse (anti-clockwise) or not (clockwise)
+};
+
 #endif
