@@ -13,11 +13,11 @@ void start_time_keeping_on_sync(); // Function to enable the flag that indicates
 
 typedef uint32_t beat_time_t; // time in centibeats (00000 - 99999)
 
-struct time_intervals {
+struct clock_intervals {
     uint32_t anti_clockwise_interval; // Interval in centibeats to the left (anti-clockwise) of the current beat time
     uint32_t clockwise_interval; // Interval in centibeats to the right (clockwise) of the current beat time
 };
 
-struct time_intervals calculate_clock_intervals(beat_time_t time_1, beat_time_t time_2); // Util function to calculate the intervals on a clock between two beat times in both directions (clockwise and anti-clockwise)
+struct clock_intervals calculate_clock_intervals(beat_time_t time_1, beat_time_t time_2); // Util function to calculate the intervals on a clock between two beat times in both directions (clockwise and anti-clockwise)
 
 #endif

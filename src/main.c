@@ -100,10 +100,14 @@ void app_main(void) {
     enum network_status current_network_status = UNDEFINED; // variable to hold the current network status received from the network interface module
     enum network_status last_network_status = UNDEFINED; // Last known network status, used to detect changes in network status to reset SNTP synchronization when connection is (re-)established
 
-    struct time_intervals clock_intervals; // Buffer variable to hold the calculated intervals between the current time and the time on the stepper motor in both directions (clockwise and anti-clockwise)
+    enum stepper_motor_mode current_stepper_motor_mode = NORMAL_OPERATION; // variable to hold the current mode of the stepper motor (normal operation or time setting mode) received from the stepper motor position set control module
+    enum stepper_motor_mode last_stepper_motor_mode = NORMAL_OPERATION; // Last known mode of the stepper motor, used to detect changes in mode to determine whether to send time updates to the stepper motor position set control task or not
+
+    struct clock_intervals clock_intervals; // Buffer variable to hold the calculated intervals between the current time and the time on the stepper motor in both directions (clockwise and anti-clockwise)
 
     while (1) {
         // Wait for time updates from the time keeping module
+        // we will get an update every centibeat
         xQueueReceive(
             time_update_queue,
             &current_time,
@@ -117,6 +121,13 @@ void app_main(void) {
             0
         );
 
+        // Get the current mode of the stepper motor (normal operation or time setting mode) from the stepper motor position set control module
+        xQueuePeek(
+            stepper_motor_mode_message_box,
+            &current_stepper_motor_mode,
+            0
+        ); 
+
         // Send time and network status to the time and networkstatus display task, wich will display it on the OLED LCD and update the network status LED
         xQueueSendToBack(
             time_networkstatus_display_queue,
@@ -124,20 +135,62 @@ void app_main(void) {
             pdMS_TO_TICKS(1000)
         );
 
-        // Calculate the intervals between the current time and the time on the stepper motor in both directions (clockwise and anti-clockwise)
-        clock_intervals = calculate_clock_intervals(time_on_stepper_motor, current_time);
+        // Update the stepper motor
+        switch (current_stepper_motor_mode) {
+            // If the mode is normal operation, we want to update the position of the stepper motor to show the current time,
+            case NORMAL_OPERATION:
+                // After the 0 point has been set in time setting mode, all we have to do is set time_on_stepper_motor to 0 and then the code will take care of moving the stepper motor to the correct position
+                if (last_stepper_motor_mode == TIME_SETTING_MODE) {
+                    time_on_stepper_motor = 0;
+                }
 
-        // If the clockwise interval from time on the stepper motor to the current time is smaller, move the stepper motor clockwise to the right time
-        // If the anti-clockwise interval is smaller, wait until the current time is the same or past the time on the stepper motor,
-        // we specificly do not move the stepper motor anti-clockwise, because that would just look bad and be confusing on a clock
-        if (clock_intervals.clockwise_interval < clock_intervals.anti_clockwise_interval && 0) {
-            xQueueSendToBack(
-                stepper_motor_command_queue,
-                &((struct stepper_motor_command){.command = 36 * (clock_intervals.clockwise_interval), .reverse = false}), // Move a step (3,6 degrees) for every centibeat
-                pdMS_TO_TICKS(1000)
-            );
+                // Calculate the intervals between the current time and the time on the stepper motor in both directions (clockwise and anti-clockwise)
+                clock_intervals = calculate_clock_intervals(time_on_stepper_motor, current_time);
 
-            time_on_stepper_motor = current_time;
+                // If the interval in the clockwise direction is smaller, we move the stepper motor clockwise to the right position
+                // When the intervals are the same, the time is the same, and it will just send a 0 degree clockwise command 
+                if (clock_intervals.clockwise_interval <= clock_intervals.anti_clockwise_interval) {
+                    xQueueSendToBack(
+                        stepper_motor_command_queue,
+                        &((struct stepper_motor_command){.command = 36 * (clock_intervals.clockwise_interval), .reverse = false}), // Move a step (3,6 degrees) for every centibeat
+                        pdMS_TO_TICKS(1000)
+                    );
+
+                    time_on_stepper_motor = current_time;
+
+                // When the anti-clockwise is smaller, we want to move the stepper motor in smal steps of 2 centibeats every update
+                // We do this because while moving the stepper motor, the the time will move forwards,
+                // So if we go to the right position in one big step, it wil overshoot and then go clockwise again to correct, which looks very wonky
+                } else {
+                    // Move the stepper motor 2 steps back every time update (wich looks continuous because it takes roughly half a centibeat to move a step)
+                    if (clock_intervals.anti_clockwise_interval > 1) {
+                        xQueueSendToBack(
+                            stepper_motor_command_queue,
+                            &((struct stepper_motor_command){.command = 36 * 2, .reverse = true}),
+                            pdMS_TO_TICKS(1000)
+                        );
+
+                        time_on_stepper_motor = (time_on_stepper_motor >= 2) ? time_on_stepper_motor - 2 : 100000 - (2 - time_on_stepper_motor);
+
+                    // If the interval is 1 centibeat, we just move one step back
+                    } else {
+                        xQueueSendToBack(
+                            stepper_motor_command_queue,
+                            &((struct stepper_motor_command){.command = 36, .reverse = true}),
+                            pdMS_TO_TICKS(1000)
+                        );
+
+                        time_on_stepper_motor = (time_on_stepper_motor >= 1) ? time_on_stepper_motor - 1 : 100000 - (1 - time_on_stepper_motor);
+                    }
+                }
+                break;
+
+            // if the mode is time setting mode, we do not update the position of the stepper motor, so that the user can set 0 point of the clock
+            case TIME_SETTING_MODE:
+                break;
+
+            default:
+                break;
         }
 
         // Reset SNTP synchronization when connection is re-established
@@ -147,6 +200,6 @@ void app_main(void) {
         }
 
         last_network_status = current_network_status;
+        last_stepper_motor_mode = current_stepper_motor_mode;
     }
 }
-

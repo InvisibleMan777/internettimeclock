@@ -143,10 +143,10 @@ void start_time_keeping_on_sync() {
 }
 
 //util function to calculate the intervals between two beat times on a clock in both directions (clockwise and anti-clockwise)
-struct time_intervals calculate_clock_intervals(beat_time_t time_1, beat_time_t time_2) {
+struct clock_intervals calculate_clock_intervals(beat_time_t time_1, beat_time_t time_2) {
     // we modulo the results with 100 so that we get the intervals looking only at the centibeats
     uint32_t interval_anti_clockwise = (time_1 > time_2 ? time_1 - time_2 : 100000 - time_2 + time_1) % 100;
     uint32_t interval_clockwise = (time_1 > time_2 ? 100000 - time_1 + time_2: time_2 - time_1) % 100;
 
-    return (struct time_intervals){.anti_clockwise_interval = interval_anti_clockwise, .clockwise_interval = interval_clockwise};
+    return (struct clock_intervals){.anti_clockwise_interval = interval_anti_clockwise, .clockwise_interval = interval_clockwise};
 }
