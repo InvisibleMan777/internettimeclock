@@ -49,6 +49,7 @@ static void wifi_handler(void *arg, esp_event_base_t base, int32_t id, void *dat
 
 // Function to start WiFi connection
 void wifi_start(char* ssid, char* password, QueueHandle_t* networkstatus_message_box) {
+    // Initalize a queue to hold the network status, which the time/network status display task can read to display the current network status on the OLED
     *networkstatus_message_box = xQueueCreate(1, sizeof(enum network_status));
     message_box = networkstatus_message_box;
 
@@ -67,7 +68,7 @@ void wifi_start(char* ssid, char* password, QueueHandle_t* networkstatus_message
     esp_event_loop_create_default();
     wifi_netif = esp_netif_create_default_wifi_sta();
 
-    // Create event group for WiFi connection status
+    // Create the event group to handle WiFi connection events
     wifi_event_group = xEventGroupCreate();
     
     // Initialize WiFi with default configuration

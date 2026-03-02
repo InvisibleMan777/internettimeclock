@@ -21,7 +21,7 @@ void task_turn_stepper_motor(void *args) {
 
     while(1) {
         xQueueReceive(
-            *(stepper_motor_args.queue),
+            *(stepper_motor_args.stepper_motor_command_queue),
             &command,
             portMAX_DELAY
         );
@@ -31,7 +31,7 @@ void task_turn_stepper_motor(void *args) {
         // We are moving the motor in half-steps, so we need to go through 8 step positions for a full cycle. The step_position variable keeps track of the current step position, and we update it in a circular manner as we move the motor.
         for (int i = 0; i < steps_to_move; i++) {
             // We inverse direction by adding 6 and taking modulo 8 of the tracked step position to manipulate the step sequence 
-            // this is the same as subtracting 2, but it works better for handling the rollovers
+            // this is the same as subtracting 2 (so instead of going from 4 to 5, we go to 5-2=3), but it works better for handling the rollovers
             // We are doing it this way because its cleaner then manualy checking wheter to go up or down the sequence and wheter or not to rollover
             if (command.reverse) {
                 step_position = (step_position + 6) % 8;
@@ -104,7 +104,7 @@ void task_turn_stepper_motor(void *args) {
 
 void set_up_stepper_motor(struct stepper_motor_args *stepper_motor_args) {
     // Initalize a queue to send stepper motor control commands to
-    *stepper_motor_args->queue = xQueueCreate(99, sizeof(struct stepper_motor_command));
+    *stepper_motor_args->stepper_motor_command_queue = xQueueCreate(99, sizeof(struct stepper_motor_command));
 
     // Create a task to control the stepper motor
     xTaskCreate(

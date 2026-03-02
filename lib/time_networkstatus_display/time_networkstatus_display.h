@@ -7,9 +7,9 @@
 #include "network_interface.h"
 
 struct time_networkstatus_display_args {
-    QueueHandle_t* queue; 
-    gpio_num_t clock_cycle_led_gpio; 
-    gpio_num_t networkstatus_led_gpio;
+    QueueHandle_t* time_networkstatus_display_queue; 
+    gpio_num_t clock_cycle_led; 
+    gpio_num_t networkstatus_led;
 };
 
 // Structure to hold time and network status information

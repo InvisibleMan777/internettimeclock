@@ -11,7 +11,7 @@ void task_time_networkstatus_display(void *args) {
 
     // Configure the GPIO pins for the clock cycle LED and network status LED
     gpio_config_t io_conf = {};
-    io_conf.pin_bit_mask = ((1ULL<<time_networkstatus_display_args.clock_cycle_led_gpio) | (1ULL<<time_networkstatus_display_args.networkstatus_led_gpio)); //bit mask
+    io_conf.pin_bit_mask = ((1ULL<<time_networkstatus_display_args.clock_cycle_led) | (1ULL<<time_networkstatus_display_args.networkstatus_led)); //bit mask
     io_conf.mode = GPIO_MODE_OUTPUT;
     io_conf.pull_up_en = 0;
     io_conf.pull_down_en = 0;
@@ -24,7 +24,7 @@ void task_time_networkstatus_display(void *args) {
     while(1) {
         // Wait for time and network status updates from the queue
         xQueueReceive(
-            *(time_networkstatus_display_args.queue),
+            *(time_networkstatus_display_args.time_networkstatus_display_queue),
             &display_data,
             portMAX_DELAY
         );
@@ -60,25 +60,25 @@ void task_time_networkstatus_display(void *args) {
         if (display_data.status != current_network_status) {
             // Update the network status LED based on the current network status
             if (display_data.status == CONNECTED) {
-                gpio_set_level(time_networkstatus_display_args.networkstatus_led_gpio, 1); // Turn on the network status LED if connected
+                gpio_set_level(time_networkstatus_display_args.networkstatus_led, 1); // Turn on the network status LED if connected
             } else {
-                gpio_set_level(time_networkstatus_display_args.networkstatus_led_gpio, 0); // Turn off the network status LED if not connected
+                gpio_set_level(time_networkstatus_display_args.networkstatus_led, 0); // Turn off the network status LED if not connected
             }
     
             current_network_status = display_data.status;
         }
 
         // Blink the clock cycle LED to indicate that we have updated the display
-        gpio_set_level(time_networkstatus_display_args.clock_cycle_led_gpio, 1);
+        gpio_set_level(time_networkstatus_display_args.clock_cycle_led, 1);
         vTaskDelay(pdMS_TO_TICKS(100));
-        gpio_set_level(time_networkstatus_display_args.clock_cycle_led_gpio, 0);
+        gpio_set_level(time_networkstatus_display_args.clock_cycle_led, 0);
     }
 }
 
 // Function to set up the time and network status display task, also initializes the queue for time and network status updates
 void set_up_time_networkstatus_display(struct time_networkstatus_display_args* time_networkstatus_display_args) {
     // Initalize queue to hold time and network status updates
-    *time_networkstatus_display_args->queue = xQueueCreate(99, sizeof(struct time_networkstatus_display_data));
+    *time_networkstatus_display_args->time_networkstatus_display_queue = xQueueCreate(99, sizeof(struct time_networkstatus_display_data));
 
     // Create a task to handle displaying time and network status
     xTaskCreate(

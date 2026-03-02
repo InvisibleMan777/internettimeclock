@@ -5,7 +5,7 @@
 #include <driver/gpio.h>
 
 struct stepper_motor_args {
-    QueueHandle_t* queue; // Queue to send stepper motor control commands to
+    QueueHandle_t* stepper_motor_command_queue; // Queue to send stepper motor control commands to
     gpio_num_t pin1; // GPIO pin for stepper motor coil 1
     gpio_num_t pin2; // GPIO pin for stepper motor coil 2
     gpio_num_t pin3; // GPIO pin for stepper motor coil 3

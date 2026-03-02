@@ -9,7 +9,6 @@
 
 beat_time_t beat_time = 0; // Time in amounth of centibeats
 static gptimer_handle_t centibeat_timer; // GPTimer handle for centibeat updates
-QueueHandle_t *queue; // Queue to send time updates to the main controller
 
 bool synch_enabled = false; // Variable to indicate whether SNTP synchronization is enabled
 bool start_time_keeping_on_synch = false; // Variable to indicate whether to start the time keeping when the first SNTP synchronization occurs
@@ -53,7 +52,7 @@ bool isr_increase_time(struct gptimer_t *timer, const gptimer_alarm_event_data_t
 
     // Send the updated time to main controller
     xQueueSendToBackFromISR(
-        *queue,
+        *(QueueHandle_t *) user_data, // Time update queue
         &beat_time, 
         &high_task_wakeup 
     );
@@ -62,15 +61,17 @@ bool isr_increase_time(struct gptimer_t *timer, const gptimer_alarm_event_data_t
     return (high_task_wakeup == pdTRUE);
 }
 
-// Function to initialize the GPTimer for centibeat updates and set up SNTP synchronization
-static void init_time_counter() {
+// Function to set up time keeping, sets up the SNTP synchronization and the GPTimer for centibeat updates
+void set_up_time_keeping(QueueHandle_t *time_update_queue) {
+    // Initalize a queue to send calculated times to
+    *time_update_queue = xQueueCreate(99, sizeof(beat_time_t));
+
     //initalize gptimer that ticks every 0.1 ms
     gptimer_config_t timer_config = {
         .clk_src = GPTIMER_CLK_SRC_DEFAULT,
         .direction = GPTIMER_COUNT_UP,
         .resolution_hz = 10000, // 10 kHz resolution (1 tick = 0.1 ms)
     };
-
     gptimer_new_timer(&timer_config, &centibeat_timer);
 
     // Configure the timer to trigger an alarm every 8640 ticks (864 ms / 1 centibeat)
@@ -79,26 +80,16 @@ static void init_time_counter() {
         .reload_count = 0,
         .flags.auto_reload_on_alarm = true,
     };
-
     gptimer_set_alarm_action(centibeat_timer, &alarm_config);
 
     // increase time every centibeat
     gptimer_event_callbacks_t cbs = {
         .on_alarm = isr_increase_time, 
     };
+    gptimer_register_event_callbacks(centibeat_timer, &cbs, time_update_queue);
 
-    gptimer_register_event_callbacks(centibeat_timer, &cbs, NULL);
+    // Enable the timer, but it will only start counting when start_time_keeping() is called or after the first SNTP synchronization if start_time_keeping_on_sync() is called
     gptimer_enable(centibeat_timer);
-}
-
-// Function to set up time keeping, sets up the SNTP synchronization and the GPTimer for centibeat updates
-void set_up_time_keeping(QueueHandle_t *time_update_queue) {
-    // Initalize a queue to send calculated times to
-    *time_update_queue = xQueueCreate(99, sizeof(beat_time_t));
-    queue = time_update_queue;
-
-    // Initialize the timer to start updating the time (beats) every centibeat
-    init_time_counter();
 }
 
 // Function to enable SNTP synchronization and set the callback function to be called when synchronization occurs
@@ -130,11 +121,6 @@ void restart_sntp_synch() {
 // Function to start the time keeping by starting the GPTimer
 void start_time_keeping() {
     gptimer_start(centibeat_timer);
-}
-
-// Function to stop the time keeping by stopping the GPTimer
-void stop_time_keeping() {
-    gptimer_stop(centibeat_timer);
 }
 
 //enables flag that indicates to start the time keeping when the first SNTP synchronization occurs

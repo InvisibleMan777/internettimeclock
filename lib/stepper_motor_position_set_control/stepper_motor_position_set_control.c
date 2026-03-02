@@ -41,7 +41,7 @@ void isr_rotery_encoder_pin_a(void* args) {
 // Interrupt service routine for the button to change modes, used to switch between normal operation mode and time setting mode
 void isr_button(void* args) {
     // Anti debounce
-    if (last_press != 0 && (clock() - last_press) < CLOCKS_PER_SEC / 10) {
+    if (last_press != 0 && (clock() - last_press) < CLOCKS_PER_SEC / 2) {
         return;
     }
     last_press = clock();
@@ -61,7 +61,7 @@ void isr_button(void* args) {
     }
 
     // Set the LED to indicate the current mode (on for time setting mode, off for normal operation)
-    gpio_set_level(stepper_motor_position_set_control_args->led_pin, (current_mode == NORMAL_OPERATION) ? 0 : 1);
+    gpio_set_level(stepper_motor_position_set_control_args->mode_led, (current_mode == NORMAL_OPERATION) ? 0 : 1);
 
     // Update the message box to the main controller with the current mode
     xQueueOverwriteFromISR(
@@ -97,7 +97,7 @@ void set_up_stepper_motor_position_set_control(struct stepper_motor_position_set
 
     // Configure output pin for the LED to indicate the current mode (on for time setting mode, off for normal operation)
     gpio_config_t output_io_conf = {
-        .pin_bit_mask = (1ULL<<stepper_motor_position_set_control_args->led_pin), 
+        .pin_bit_mask = (1ULL<<stepper_motor_position_set_control_args->mode_led), 
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = 0,
         .pull_down_en = 0,
