@@ -3,7 +3,7 @@
 #include <time.h>
 #include "power_mode_control.h"
 
-enum power_mode current_power_mode; // variable to hold the current power mode, initialized to normal mode
+enum power_mode current_power_mode = UNDEFINED_POWER_MODE; // variable to hold the current power mode
 clock_t last_power_mode_button_press = 0; // Variable to keep track of the last time the button was pressed, used for debouncing
 
 void isr_power_mode_button(void* args) {

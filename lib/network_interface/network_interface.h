@@ -11,7 +11,7 @@ enum network_status {
     NOT_CONNECTED,
     NOT_AVAILABLE,
     ERROR,
-    UNDEFINED,
+    UNDEFINED_NETWORKSTATUS,
 };
 
 #endif

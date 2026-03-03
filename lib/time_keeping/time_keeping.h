@@ -8,7 +8,6 @@ void enable_sntp_sync(); // Function to enable SNTP synchronization and set the 
 void restart_sntp_synch(); // Function to restart SNTP synchronization
 
 void start_time_keeping(); // Function to start the time keeping by starting the GPTimer
-void stop_time_keeping(); // Function to stop the time keeping by stopping the GPTimer
 void start_time_keeping_on_sync(); // Function to enable the flag that indicates to start the time keeping when the first SNTP synchronization occurs
 
 typedef uint32_t beat_time_t; // time in centibeats (00000 - 99999)

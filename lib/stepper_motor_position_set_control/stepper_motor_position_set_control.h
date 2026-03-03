@@ -6,7 +6,8 @@
 
 enum stepper_motor_mode {
     NORMAL_OPERATION,
-    TIME_SETTING_MODE
+    TIME_SETTING_MODE,
+    UNDEFINED_STEPPER_MOTOR_MODE,
 };
 
 struct stepper_motor_position_set_control_args {

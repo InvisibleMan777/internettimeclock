@@ -7,7 +7,7 @@
 volatile clock_t last_rotery_encoder_pin_a_interrupt = 0; // Variable to keep track of the last time the rotary encoder pin A interrupt was triggered, used for debouncing
 volatile clock_t last_stepper_motor_mode_press = 0; // Variable to keep track of the last time the button was pressed, used for debouncing
 
-enum stepper_motor_mode current_mode; // current mode of the stepper motor (TIME_SETTING_MODE or NORMAL_OPERATION)
+enum stepper_motor_mode current_mode = UNDEFINED_STEPPER_MOTOR_MODE; // current mode of the stepper motor (TIME_SETTING_MODE or NORMAL_OPERATION)
 
 // Interrupt service routine for the rotary encoder pin A, used to change the position of the stepper motor in time setting mode
 void isr_rotery_encoder_pin_a(void* args) {

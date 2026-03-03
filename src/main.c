@@ -84,8 +84,8 @@ struct buzzer_args buzzer_args = {
 
 // Arguments for the power mode control module
 struct power_mode_control_args power_mode_control_args = {
-    .power_mode_button_pin = POWER_MODE_BUTTON_GPIO,
-    .power_mode_message_box = &power_mode_message_box
+    .power_mode_message_box = &power_mode_message_box,
+    .power_mode_button_pin = POWER_MODE_BUTTON_GPIO
 };
 
 void app_main(void) {
@@ -127,8 +127,8 @@ void app_main(void) {
     struct clock_intervals clock_intervals; // Variable to hold the calculated intervals between the current time and the time on the stepper motor in both directions (clockwise and anti-clockwise)
     uint32_t steps_to_take; // Variable to hold the calculated number of steps the stepper motor needs to take to move
 
-    enum network_status current_network_status = UNDEFINED; // buffer to hold the current network status received from the network interface module
-    enum network_status last_network_status = UNDEFINED; // Last known network status, used to detect changes in network status to reset SNTP synchronization when connection is (re-)established
+    enum network_status current_network_status = UNDEFINED_NETWORKSTATUS; // buffer to hold the current network status received from the network interface module
+    enum network_status last_network_status = UNDEFINED_NETWORKSTATUS; // Last known network status, used to detect changes in network status to reset SNTP synchronization when connection is (re-)established
 
     enum stepper_motor_mode current_stepper_motor_mode = NORMAL_OPERATION; // buffer to hold the current mode of the stepper motor (normal operation or time setting mode) received from the stepper motor position set control module
     enum power_mode current_power_mode = NORMAL_MODE; // buffer to hold the current power mode received from the power mode control module
@@ -136,13 +136,14 @@ void app_main(void) {
     while (1) {
         // Wait for time updates from the time keeping module
         // we will get an update every centibeat
-        xQueueReceive(
-            time_update_queue,
-            &current_time,
-            portMAX_DELAY
-        );
+        if (xQueueReceive(time_update_queue, &current_time, pdMS_TO_TICKS(10000)) != pdTRUE) {
+            // When connected, timekeeping wil only start after the first synch, When this takes to long, or if we lose connection while waiting. Start the time keeping to at least have the clock running, and try to restart SNTP synchronization in case of connection issues
+            start_time_keeping();
+            restart_sntp_synch();
+            continue;
+        }
 
-        // Get the current netwWork status from the network interface
+        // Get the current network status from the network interface
         xQueuePeek(
             networkstatus_message_box,
             &current_network_status,
@@ -187,6 +188,10 @@ void app_main(void) {
                     &((struct time_networkstatus_display_data){.beat_time = current_time, .status = current_network_status, .disable_oled_lcd = true}),
                     pdMS_TO_TICKS(800)
                 );
+                break;
+
+            default:
+                break;
         }
 
         // Update the stepper motor
@@ -208,7 +213,7 @@ void app_main(void) {
                     // Instead of correcting big intervals in one big step, We move in steps of max 2 per update (which looks continuous because it takes roughly half a centibeat to move a step)
                     // The reason why we do this is so that the stepper motor module isnt stuck executing one big step for a long time
                     // Also when when going in one big step anti-clockwise, because time moves forward, it will overshoot and have to correct itself clockwise again, wich looks very wonky
-                    steps_to_take = clock_intervals.anti_clockwise_interval >= 2 ? 2 : clock_intervals.anti_clockwise_interval;
+                    steps_to_take = clock_intervals.anti_clockwise_interval > 2 ? 2 : clock_intervals.anti_clockwise_interval;
 
                     xQueueSendToBack(
                         stepper_motor_command_queue,
@@ -219,8 +224,9 @@ void app_main(void) {
                     // Update the tracked time on the stepper motor, we have to make sure to wrap around at a full rotation (100 centibeats)
                     time_on_stepper_motor = (time_on_stepper_motor >= steps_to_take) ? time_on_stepper_motor - steps_to_take : 100000 - (steps_to_take - time_on_stepper_motor);
                   
+                // same going clockwise
                 } else {
-                    steps_to_take = clock_intervals.clockwise_interval >= 2 ? 2 : clock_intervals.clockwise_interval;
+                    steps_to_take = clock_intervals.clockwise_interval > 2 ? 2 : clock_intervals.clockwise_interval;
 
                     xQueueSendToBack(
                         stepper_motor_command_queue,
@@ -244,7 +250,7 @@ void app_main(void) {
 
         // Reset SNTP synchronization when connection is re-established
         // When losing connection, synchonization will stop until its reset again
-        if ((last_network_status != CONNECTED && last_network_status != UNDEFINED) && current_network_status == CONNECTED) {
+        if ((last_network_status != CONNECTED && last_network_status != UNDEFINED_NETWORKSTATUS) && current_network_status == CONNECTED) {
             restart_sntp_synch();
         }
 
