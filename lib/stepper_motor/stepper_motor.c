@@ -20,6 +20,7 @@ void task_turn_stepper_motor(void *args) {
     uint16_t steps_to_move; // variable to hold the calculated number of steps to move based on the received command
 
     while(1) {
+        // Wait for a stepper motor control command from the queue
         xQueueReceive(
             *(stepper_motor_args.stepper_motor_command_queue),
             &command,
