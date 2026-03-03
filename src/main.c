@@ -7,6 +7,7 @@
 #include "network_interface.h"
 #include "stepper_motor.h"
 #include "stepper_motor_position_set_control.h"
+#include "buzzer.h"
 
 // env variables for wifi credentials, set in the .env file
 #define WIFI_SSID CONFIG_WIFI_SSID // WiFi SSID to connect to
@@ -33,13 +34,16 @@
 #define ROTARY_ENCODER_PIN_B GPIO_NUM_5 // GPIO pin for rotary encoder pin B
 #define MODE_BUTTON_PIN GPIO_NUM_7 // GPIO pin for the button to change modes
 
+// IO buzzer
+#define BUZZER_GPIO GPIO_NUM_6 // GPIO pin for the buzzer
+
 // Task communication queues
 QueueHandle_t time_update_queue; // Time keeping module sends time updates to the main controller through this queue
 QueueHandle_t networkstatus_message_box; // The network interface task updates the current network status, wich the the main controller can read through this queue/messagebox
 QueueHandle_t stepper_motor_mode_message_box; // The stepper motor position set control task sends the current mode of the stepper motor (normal operation or time setting mode) to the main controller through this queue/messagebox
 QueueHandle_t stepper_motor_command_queue; // The main controller and stepper motor position set controller send commands to the stepper motor task through this queue, the command represents the deca-degrees to rotate the stepper motor (0 - 3600)
 QueueHandle_t time_networkstatus_display_queue; // The main controller sends time and network status updates to the time and network status display task through this queue, which will display it on the OLED LCD and update the network status LED
-
+QueueHandle_t buzzer_command_queue; // The main controller sends commands to the buzzer task through this queue, the command represents the duration in milliseconds for which the buzzer should be on
 // Arguments for the stepper motor module
 struct stepper_motor_args stepper_motor_args = {
     .stepper_motor_command_queue = &stepper_motor_command_queue,
@@ -66,6 +70,12 @@ struct time_networkstatus_display_args time_networkstatus_display_args = {
     .networkstatus_led = NETWORK_STATUS_LED_GPIO 
 };
 
+// Arguments for the buzzer module
+struct buzzer_args buzzer_args = {
+    .buzzer_command_queue = &buzzer_command_queue,
+    .buzzer_pin = BUZZER_GPIO
+};
+
 void app_main(void) {
     // Initialize the OLED display
     initialize_oled(OLED_ADDR, I2C_SDA_GPIO, I2C_SCL_GPIO);
@@ -75,6 +85,7 @@ void app_main(void) {
     set_up_time_networkstatus_display(&time_networkstatus_display_args);
     set_up_stepper_motor(&stepper_motor_args);
     set_up_stepper_motor_position_set_control(&stepper_motor_position_set_control_args);
+    set_up_buzzer(&buzzer_args);
     set_up_time_keeping(&time_update_queue);
 
     // Start WiFi connection
@@ -131,6 +142,13 @@ void app_main(void) {
             time_networkstatus_display_queue,
             &((struct time_networkstatus_display_data){.beat_time = current_time, .status = current_network_status}),
             pdMS_TO_TICKS(800) // max wait is around a centibeat
+        );
+
+        // Send a command to the buzzer task to make a short sound of 25ms
+        xQueueSendToBack(
+            buzzer_command_queue,
+            &(uint32_t){100},
+            pdMS_TO_TICKS(800)
         );
 
         // Update the stepper motor
