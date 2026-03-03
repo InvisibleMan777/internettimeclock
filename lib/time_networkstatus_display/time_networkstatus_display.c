@@ -64,6 +64,12 @@ void task_time_networkstatus_display(void *args) {
             write_to_oled("", "");
         }
 
+        if (display_data.status == CONNECTED) {
+                gpio_set_level(time_networkstatus_display_args.networkstatus_led, 1); // Turn on the network status LED if we are connected
+        } else {
+            gpio_set_level(time_networkstatus_display_args.networkstatus_led, 0); // Turn off the network status LED if we are not connected
+        }
+
         // Blink the clock cycle LED to indicate that we have updated the display
         gpio_set_level(time_networkstatus_display_args.clock_cycle_led, 1);
         vTaskDelay(pdMS_TO_TICKS(100));
