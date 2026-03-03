@@ -7,12 +7,13 @@ void task_turn_stepper_motor(void *args) {
     struct stepper_motor_args stepper_motor_args = *(struct stepper_motor_args *) args; // Cast the arguments to the correct type so we can access the queue
 
     // Configure the GPIO pins for the stepper motor coils
-    gpio_config_t io_conf = {};
-    io_conf.pin_bit_mask = ((1ULL<<stepper_motor_args.pin1) | (1ULL<<stepper_motor_args.pin2) | (1ULL<<stepper_motor_args.pin3) | (1ULL<<stepper_motor_args.pin4)); // bit mask for the stepper motor pins
-    io_conf.mode = GPIO_MODE_OUTPUT; // Set as output
-    io_conf.pull_up_en = 0; // No pull-up
-    io_conf.pull_down_en = 0; // No pull-down
-    io_conf.intr_type = GPIO_INTR_DISABLE; // No interrupts
+    gpio_config_t io_conf = {
+        .pin_bit_mask = ((1ULL<<stepper_motor_args.pin1) | (1ULL<<stepper_motor_args.pin2) | (1ULL<<stepper_motor_args.pin3) | (1ULL<<stepper_motor_args.pin4)), // bit mask for the stepper motor pins
+        .mode = GPIO_MODE_OUTPUT, // Set as output
+        .pull_up_en = 0, // No pull-up
+        .pull_down_en = 0, // No pull-down
+        .intr_type = GPIO_INTR_DISABLE, // No interrupts
+    };
     gpio_config(&io_conf);
     
     struct stepper_motor_command command; // variable to hold the received stepper motor control command, represents the deca-degrees to rotate the stepper motor (0 - 3600)

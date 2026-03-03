@@ -5,6 +5,7 @@
 #include <driver/gpio.h>
 #include "time_keeping.h"
 #include "network_interface.h"
+#include "power_mode_control.h"
 
 struct time_networkstatus_display_args {
     QueueHandle_t* time_networkstatus_display_queue; 
@@ -16,6 +17,7 @@ struct time_networkstatus_display_args {
 struct time_networkstatus_display_data {
     beat_time_t beat_time; // variable to hold beats * 100
     enum network_status status; // variable to hold the network status
+    bool disable_oled_lcd; // variable to indicate whether to disable the OLED LCD display
 };
 
 void task_time_networkstatus_display(void *args); // Task function to handle displaying time and network status on the OLED display

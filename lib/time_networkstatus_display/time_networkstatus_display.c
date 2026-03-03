@@ -10,16 +10,16 @@ void task_time_networkstatus_display(void *args) {
     struct time_networkstatus_display_args time_networkstatus_display_args = *(struct time_networkstatus_display_args *) args; // cast the arguments to the correct type so we can access the queue and GPIO numbers
 
     // Configure the GPIO pins for the clock cycle LED and network status LED
-    gpio_config_t io_conf = {};
-    io_conf.pin_bit_mask = ((1ULL<<time_networkstatus_display_args.clock_cycle_led) | (1ULL<<time_networkstatus_display_args.networkstatus_led)); //bit mask
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pull_up_en = 0;
-    io_conf.pull_down_en = 0;
-    io_conf.intr_type = GPIO_INTR_DISABLE;
+    gpio_config_t io_conf = {
+        .pin_bit_mask = ((1ULL<<time_networkstatus_display_args.clock_cycle_led) | (1ULL<<time_networkstatus_display_args.networkstatus_led)), //bit mask
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = 0,
+        .pull_down_en = 0,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
     gpio_config(&io_conf);
 
     struct time_networkstatus_display_data display_data; // variable to hold the time and network status data received from the queue
-    enum network_status current_network_status = NOT_CONNECTED; // variable to hold the current network status, initialized to NOT_AVAILABLE
 
     while(1) {
         // Wait for time and network status updates from the queue
@@ -29,43 +29,39 @@ void task_time_networkstatus_display(void *args) {
             portMAX_DELAY
         );
 
-        // Format the time value into a string
-        char beats_str[40]; // buffer to hold the formatted time string
-        snprintf(beats_str, sizeof(beats_str), "beats: @%.2f", display_data.beat_time / 100.0f);
+        // Update the OLED display with received time and network status data, if the OLED LCD display is not disabled
+        if (!display_data.disable_oled_lcd) {
+            // Format the time value into a string
+            char beats_str[40]; 
+            snprintf(beats_str, sizeof(beats_str), "beats: @%.2f", display_data.beat_time / 100.0f);
 
-        // format the network status into a string
-        char status_str[23]; // buffer to hold the formatted network status string
-        switch (display_data.status) {
-            case CONNECTED:
-                snprintf(status_str, sizeof(status_str), "status: CONNECTED");
-                break;
-            case NOT_CONNECTED:
-                snprintf(status_str, sizeof(status_str), "status: NOT_CONNECTED");
-                break;
-            case NOT_AVAILABLE:
-                snprintf(status_str, sizeof(status_str), "status: NOT_AVAILABLE");
-                break;
-            case ERROR:
-                snprintf(status_str, sizeof(status_str), "status: ERROR");
-                break;
-            default:
-                snprintf(status_str, sizeof(status_str), "status: ERROR");
-                break;
-        }
-
-        // Write the time and network status to the OLED display
-        write_to_oled(beats_str, status_str);
-
-        // Update the network status LED based on the current network status if it has changed
-        if (display_data.status != current_network_status) {
-            // Update the network status LED based on the current network status
-            if (display_data.status == CONNECTED) {
-                gpio_set_level(time_networkstatus_display_args.networkstatus_led, 1); // Turn on the network status LED if connected
-            } else {
-                gpio_set_level(time_networkstatus_display_args.networkstatus_led, 0); // Turn off the network status LED if not connected
+            // format the network status into a string
+            char status_str[23];
+            switch (display_data.status) {
+                case CONNECTED:
+                    snprintf(status_str, sizeof(status_str), "status: CONNECTED");
+                    break;
+                case NOT_CONNECTED:
+                    snprintf(status_str, sizeof(status_str), "status: NOT_CONNECTED");
+                    break;
+                case NOT_AVAILABLE:
+                    snprintf(status_str, sizeof(status_str), "status: NOT_AVAILABLE");
+                    break;
+                case ERROR:
+                    snprintf(status_str, sizeof(status_str), "status: ERROR");
+                    break;
+                default:
+                    snprintf(status_str, sizeof(status_str), "status: ERROR");
+                    break;
             }
-    
-            current_network_status = display_data.status;
+
+            // Write the time and network status to the OLED display
+            write_to_oled(beats_str, status_str);
+
+        } else {
+            // If the OLED LCD display is disabled, instead of the time and networkstatus, we write empty strings to it, 
+            // Because it is oled, this will turn off all the pixels
+            write_to_oled("", "");
         }
 
         // Blink the clock cycle LED to indicate that we have updated the display
@@ -84,7 +80,7 @@ void set_up_time_networkstatus_display(struct time_networkstatus_display_args* t
     xTaskCreate(
         task_time_networkstatus_display, // Task function
         "time_networkstatus_display", // Name
-        2048, // Stack size
+        4096, // Stack size
         time_networkstatus_display_args, // arguments
         2, // Priority
         NULL // Task handle (not used in this case)

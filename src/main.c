@@ -8,6 +8,7 @@
 #include "stepper_motor.h"
 #include "stepper_motor_position_set_control.h"
 #include "buzzer.h"
+#include "power_mode_control.h"
 
 // env variables for wifi credentials, set in the .env file
 #define WIFI_SSID CONFIG_WIFI_SSID // WiFi SSID to connect to
@@ -37,13 +38,18 @@
 // IO buzzer
 #define BUZZER_GPIO GPIO_NUM_6 // GPIO pin for the buzzer
 
+// IO power mode control
+#define POWER_MODE_BUTTON_GPIO GPIO_NUM_0 // this is connected to the boot button
+
 // Task communication queues
 QueueHandle_t time_update_queue; // Time keeping module sends time updates to the main controller through this queue
 QueueHandle_t networkstatus_message_box; // The network interface task updates the current network status, wich the the main controller can read through this queue/messagebox
 QueueHandle_t stepper_motor_mode_message_box; // The stepper motor position set control task sends the current mode of the stepper motor (normal operation or time setting mode) to the main controller through this queue/messagebox
+QueueHandle_t power_mode_message_box; // The power mode control module sends the current power mode to the main controller through this queue/messagebox
 QueueHandle_t stepper_motor_command_queue; // The main controller and stepper motor position set controller send commands to the stepper motor task through this queue, the command represents the deca-degrees to rotate the stepper motor (0 - 3600)
 QueueHandle_t time_networkstatus_display_queue; // The main controller sends time and network status updates to the time and network status display task through this queue, which will display it on the OLED LCD and update the network status LED
 QueueHandle_t buzzer_command_queue; // The main controller sends commands to the buzzer task through this queue, the command represents the duration in milliseconds for which the buzzer should be on
+
 // Arguments for the stepper motor module
 struct stepper_motor_args stepper_motor_args = {
     .stepper_motor_command_queue = &stepper_motor_command_queue,
@@ -76,15 +82,25 @@ struct buzzer_args buzzer_args = {
     .buzzer_pin = BUZZER_GPIO
 };
 
+// Arguments for the power mode control module
+struct power_mode_control_args power_mode_control_args = {
+    .power_mode_button_pin = POWER_MODE_BUTTON_GPIO,
+    .power_mode_message_box = &power_mode_message_box
+};
+
 void app_main(void) {
     // Initialize the OLED display
     initialize_oled(OLED_ADDR, I2C_SDA_GPIO, I2C_SCL_GPIO);
     write_to_oled("Starting...", ""); // Display "Connecting to WiFi..." on the OLED
 
-    // Initialize tasks and modules
+    // Initialize the GPIO ISR service, needed for pin interrupts
+    gpio_install_isr_service(0);
+
+    // Initialize tasks, queues, and modules
     set_up_time_networkstatus_display(&time_networkstatus_display_args);
     set_up_stepper_motor(&stepper_motor_args);
     set_up_stepper_motor_position_set_control(&stepper_motor_position_set_control_args);
+    set_up_power_mode_control(&power_mode_control_args);
     set_up_buzzer(&buzzer_args);
     set_up_time_keeping(&time_update_queue);
 
@@ -113,6 +129,7 @@ void app_main(void) {
     enum network_status last_network_status = UNDEFINED; // Last known network status, used to detect changes in network status to reset SNTP synchronization when connection is (re-)established
 
     enum stepper_motor_mode current_stepper_motor_mode = NORMAL_OPERATION; // variable to hold the current mode of the stepper motor (normal operation or time setting mode) received from the stepper motor position set control module
+    enum power_mode current_power_mode = NORMAL_MODE; // variable to hold the current power mode received from the power mode control module
 
     while (1) {
         // Wait for time updates from the time keeping module
@@ -137,12 +154,31 @@ void app_main(void) {
             0
         ); 
 
-        // Send time and network status to the time and networkstatus display task, wich will display it on the OLED LCD and update the network status LED
-        xQueueSendToBack(
-            time_networkstatus_display_queue,
-            &((struct time_networkstatus_display_data){.beat_time = current_time, .status = current_network_status}),
-            pdMS_TO_TICKS(800) // max wait is around a centibeat
+        // Get the current power mode from the power mode control module
+        xQueuePeek(
+            power_mode_message_box,
+            &current_power_mode,
+            0
         );
+
+        // Send time and network status to the time and networkstatus display task, wich will display it on the OLED LCD and update the network status LED
+        switch (current_power_mode) {
+            case NORMAL_MODE:
+                xQueueSendToBack(
+                    time_networkstatus_display_queue,
+                    &((struct time_networkstatus_display_data){.beat_time = current_time, .status = current_network_status, .disable_oled_lcd = false}),
+                    pdMS_TO_TICKS(800) // max wait is around a centibeat
+                );
+                break;
+            
+            // In low power mode, we disable the OLED LCD display to save power
+            case LOW_POWER_MODE:
+                xQueueSendToBack(
+                    time_networkstatus_display_queue,
+                    &((struct time_networkstatus_display_data){.beat_time = current_time, .status = current_network_status, .disable_oled_lcd = true}),
+                    pdMS_TO_TICKS(800) // max wait is around a centibeat
+                );
+        }
 
         // Send a command to the buzzer task to make a short sound of 25ms
         xQueueSendToBack(

@@ -5,7 +5,7 @@
 #include "time.h"
 
 volatile clock_t last_rotery_encoder_pin_a_interrupt = 0; // Variable to keep track of the last time the rotary encoder pin A interrupt was triggered, used for debouncing
-volatile clock_t last_press = 0; // Variable to keep track of the last time the button was pressed, used for debouncing
+volatile clock_t last_stepper_motor_mode_press = 0; // Variable to keep track of the last time the button was pressed, used for debouncing
 
 enum stepper_motor_mode current_mode; // current mode of the stepper motor (TIME_SETTING_MODE or NORMAL_OPERATION)
 
@@ -41,10 +41,10 @@ void isr_rotery_encoder_pin_a(void* args) {
 // Interrupt service routine for the button to change modes, used to switch between normal operation mode and time setting mode
 void isr_button(void* args) {
     // Anti debounce
-    if (last_press != 0 && (clock() - last_press) < CLOCKS_PER_SEC / 2) {
+    if (last_stepper_motor_mode_press != 0 && (clock() - last_stepper_motor_mode_press) < CLOCKS_PER_SEC / 2) {
         return;
     }
-    last_press = clock();
+    last_stepper_motor_mode_press = clock();
 
     // Get the arguments passed to the ISR handler
     struct stepper_motor_position_set_control_args* stepper_motor_position_set_control_args = (struct stepper_motor_position_set_control_args*) args;
@@ -85,8 +85,6 @@ void set_up_stepper_motor_position_set_control(struct stepper_motor_position_set
         .intr_type = GPIO_INTR_NEGEDGE,
     };
     gpio_config(&input_io_conf);
-
-    gpio_install_isr_service(0);
 
     // Set up interrupts for the rotary encoder to change the position of the stepper motor in time setting mode
     // We only need a interrupt for pin A, we determine the direction by comparing pin a to pin b in the interupt service routine
