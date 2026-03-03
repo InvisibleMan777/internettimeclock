@@ -121,15 +121,17 @@ void app_main(void) {
         start_time_keeping_on_sync(); // Start the time keeping when the first SNTP synchronization occurs, so that we have the correct time from the start
     }
 
-    beat_time_t time_on_stepper_motor = 0; // variable to keep track of the time that is currently shown on the stepper motor, initialized to 0 (12:00:00) at the start
-    beat_time_t current_time = 0; // Buffer variable to hold the current time received from the time keeping module
-    struct clock_intervals clock_intervals; // Buffer variable to hold the calculated intervals between the current time and the time on the stepper motor in both directions (clockwise and anti-clockwise)
+    beat_time_t time_on_stepper_motor = 0; // variable to keep track of the time that is currently shown on the stepper motort
+    beat_time_t current_time = 0; // Buffer to hold the current time received from the time keeping module
 
-    enum network_status current_network_status = UNDEFINED; // variable to hold the current network status received from the network interface module
+    struct clock_intervals clock_intervals; // Variable to hold the calculated intervals between the current time and the time on the stepper motor in both directions (clockwise and anti-clockwise)
+    uint32_t steps_to_take; // Variable to hold the calculated number of steps the stepper motor needs to take to move
+
+    enum network_status current_network_status = UNDEFINED; // buffer to hold the current network status received from the network interface module
     enum network_status last_network_status = UNDEFINED; // Last known network status, used to detect changes in network status to reset SNTP synchronization when connection is (re-)established
 
-    enum stepper_motor_mode current_stepper_motor_mode = NORMAL_OPERATION; // variable to hold the current mode of the stepper motor (normal operation or time setting mode) received from the stepper motor position set control module
-    enum power_mode current_power_mode = NORMAL_MODE; // variable to hold the current power mode received from the power mode control module
+    enum stepper_motor_mode current_stepper_motor_mode = NORMAL_OPERATION; // buffer to hold the current mode of the stepper motor (normal operation or time setting mode) received from the stepper motor position set control module
+    enum power_mode current_power_mode = NORMAL_MODE; // buffer to hold the current power mode received from the power mode control module
 
     while (1) {
         // Wait for time updates from the time keeping module
@@ -161,13 +163,20 @@ void app_main(void) {
             0
         );
 
+        // Send a command to the buzzer task to make a short beep sound
+        xQueueSendToBack(
+            buzzer_command_queue,
+            &(uint32_t){100},
+            pdMS_TO_TICKS(800) // max wait is around a centibeat
+        );
+
         // Send time and network status to the time and networkstatus display task, wich will display it on the OLED LCD and update the network status LED
         switch (current_power_mode) {
             case NORMAL_MODE:
                 xQueueSendToBack(
                     time_networkstatus_display_queue,
                     &((struct time_networkstatus_display_data){.beat_time = current_time, .status = current_network_status, .disable_oled_lcd = false}),
-                    pdMS_TO_TICKS(800) // max wait is around a centibeat
+                    pdMS_TO_TICKS(800)
                 );
                 break;
             
@@ -176,73 +185,51 @@ void app_main(void) {
                 xQueueSendToBack(
                     time_networkstatus_display_queue,
                     &((struct time_networkstatus_display_data){.beat_time = current_time, .status = current_network_status, .disable_oled_lcd = true}),
-                    pdMS_TO_TICKS(800) // max wait is around a centibeat
+                    pdMS_TO_TICKS(800)
                 );
         }
-
-        // Send a command to the buzzer task to make a short sound of 25ms
-        xQueueSendToBack(
-            buzzer_command_queue,
-            &(uint32_t){100},
-            pdMS_TO_TICKS(800)
-        );
 
         // Update the stepper motor
         switch (current_stepper_motor_mode) {
             // If the mode is normal operation, we want to update the position of the stepper motor to show the current time,
             case NORMAL_OPERATION:
+                // If the time is the same, we do not need to move the stepper motor
+                if (time_on_stepper_motor == current_time) {
+                    break;
+                }
+
                 // Calculate the intervals between the current time and the time on the stepper motor in both directions (clockwise and anti-clockwise)
                 clock_intervals = calculate_clock_intervals(time_on_stepper_motor, current_time);
 
                 // Move the stepper motor in the direction of the shortest interval to the current time
-                if (clock_intervals.clockwise_interval < clock_intervals.anti_clockwise_interval) {
-                    // Instead of correcting big intervals in one big step, We move in steps of 2 per update (which looks continuous because it takes roughly half a centibeat to move a step)
+                // NOTE: the stepper motor takes about half a centibeat to move one step, so after 2 steps the time wil have gone a centibeat forward (clockwise)
+                // For this reason, going clockwise will take 1.5 times the interval, and going anti-clockwise 1/1.5 times the interval
+                if (clock_intervals.anti_clockwise_interval / 1.5 < clock_intervals.clockwise_interval * 1.5) {
+                    // Instead of correcting big intervals in one big step, We move in steps of max 2 per update (which looks continuous because it takes roughly half a centibeat to move a step)
                     // The reason why we do this is so that the stepper motor module isnt stuck executing one big step for a long time
                     // Also when when going in one big step anti-clockwise, because time moves forward, it will overshoot and have to correct itself clockwise again, wich looks very wonky
-                    if (clock_intervals.clockwise_interval > 1) {
-                        xQueueSendToBack(
-                            stepper_motor_command_queue,
-                            &((struct stepper_motor_command){.command = 36 * 2, .reverse = false}),
-                            pdMS_TO_TICKS(800)
-                        );
+                    steps_to_take = clock_intervals.anti_clockwise_interval >= 2 ? 2 : clock_intervals.anti_clockwise_interval;
 
-                        // Instead of corecting the time in one big step, we move the motor 2 steps in the closest direction every update
-                        time_on_stepper_motor = (time_on_stepper_motor + 2 < 100000) ? time_on_stepper_motor + 2 : time_on_stepper_motor + 2 - 100000;
+                    xQueueSendToBack(
+                        stepper_motor_command_queue,
+                        &((struct stepper_motor_command){.command = 36 * steps_to_take, .reverse = true}), // Every centibeat corresponds to 1 100th of a full rotation, so a 36 command (360/100 = 3,6 degrees) corresponds to 1 centibeat
+                        pdMS_TO_TICKS(800)
+                    );
 
-                    // When the interval is only 1 centibeat, we can just move one step, and then we will be at the correct time on the stepper motor
-                    } else {
-                        xQueueSendToBack(
-                            stepper_motor_command_queue,
-                            &((struct stepper_motor_command){.command = 36, .reverse = false}),
-                            pdMS_TO_TICKS(800)
-                        );
+                    // Update the tracked time on the stepper motor, we have to make sure to wrap around at a full rotation (100 centibeats)
+                    time_on_stepper_motor = (time_on_stepper_motor >= steps_to_take) ? time_on_stepper_motor - steps_to_take : 100000 - (steps_to_take - time_on_stepper_motor);
+                  
+                } else {
+                    steps_to_take = clock_intervals.clockwise_interval >= 2 ? 2 : clock_intervals.clockwise_interval;
 
-                        time_on_stepper_motor = current_time;
-                    }
+                    xQueueSendToBack(
+                        stepper_motor_command_queue,
+                        &((struct stepper_motor_command){.command = 36 * steps_to_take, .reverse = false}),
+                        pdMS_TO_TICKS(800)
+                    );
 
-                // Same anti-clockwise
-                } else if (clock_intervals.anti_clockwise_interval < clock_intervals.clockwise_interval) {
-                    if (clock_intervals.anti_clockwise_interval > 1) {
-                        xQueueSendToBack(
-                            stepper_motor_command_queue,
-                            &((struct stepper_motor_command){.command = 36 * 2, .reverse = true}),
-                            pdMS_TO_TICKS(800)
-                        );
-
-                        time_on_stepper_motor = (time_on_stepper_motor >= 2) ? time_on_stepper_motor - 2 : 100000 - (2 - time_on_stepper_motor);
-
-                    } else {
-                        xQueueSendToBack(
-                            stepper_motor_command_queue,
-                            &((struct stepper_motor_command){.command = 36, .reverse = true}),
-                            pdMS_TO_TICKS(800)
-                        );
-
-                        time_on_stepper_motor = current_time;
-                    }
+                    time_on_stepper_motor = (time_on_stepper_motor + steps_to_take < 100000) ? time_on_stepper_motor + steps_to_take : time_on_stepper_motor + steps_to_take - 100000;
                 }
-                // if the intervals are the same, the time is already correct, so we do not move the stepper motor,
-
                 break;
 
             // if the mode is time setting mode, we do not update the position of the stepper motor, so that the user can set 0 point of the clock
