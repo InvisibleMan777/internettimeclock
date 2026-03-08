@@ -35,11 +35,11 @@ static void wifi_handler(void *arg, esp_event_base_t base, int32_t id, void *dat
                 xQueueOverwrite(*message_box, &(enum network_status){ERROR});
                 break;
         }
-    // When we get an IP, set the DNS server (hotspots have DNS assign issues, so we set it manualy to Google's public DNS) and set the connected bit
+    // When we get an IP, set the DNS server (hotspots have DNS assign issues, so we set it manualy to Cloudflare public DNS) and set the connected bit
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         esp_netif_dns_info_t dns_set = {0};
         ip4_addr_t ip4 = {0};
-        ip4addr_aton("8.8.8.8", &ip4);
+        ip4addr_aton("1.1.1.1", &ip4);
         dns_set.ip.u_addr.ip4.addr = ip4.addr;
         esp_netif_set_dns_info(wifi_netif, ESP_NETIF_DNS_MAIN, &dns_set);
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
@@ -65,7 +65,6 @@ void wifi_start(char* ssid, char* password, QueueHandle_t* networkstatus_message
     // Initialize NVS, network interface, and event loop
     nvs_flash_init();
     esp_netif_init();
-    esp_event_loop_create_default();
     wifi_netif = esp_netif_create_default_wifi_sta();
 
     // Create the event group to handle WiFi connection events

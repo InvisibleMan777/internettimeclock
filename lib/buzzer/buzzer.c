@@ -53,8 +53,8 @@ void task_buzzer(void *args) {
         ledc_update_duty(ledc_channel_conf.speed_mode, ledc_channel_conf.channel); // Update the duty to apply the change
 
         // Keep the buzzer on for the specified duration
-        vTaskDelay(duration_ms / portTICK_PERIOD_MS);
-        
+        vTaskDelay(pdMS_TO_TICKS(duration_ms));
+
         // Turn off the buzzer by setting the duty cycle back to 0
         ledc_set_duty(ledc_channel_conf.speed_mode, ledc_channel_conf.channel, 0);
         ledc_update_duty(ledc_channel_conf.speed_mode, ledc_channel_conf.channel);

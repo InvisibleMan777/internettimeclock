@@ -1,5 +1,6 @@
 #include <esp_event.h>
 #include <esp_log.h>
+#include <esp_netif.h>
 
 #include "oled.h"
 #include "time_networkstatus_display.h"
@@ -40,6 +41,10 @@
 
 // IO power mode control
 #define POWER_MODE_BUTTON_GPIO GPIO_NUM_0 // this is connected to the boot button
+
+// Synchonization settings
+#define SNTP_SYNCH_INTERVAL_MS 20 * 1000 // synchronize every 20 seconds
+#define SNTP_SERVER_URL "time.google.com" // URL of the SNTP server to synchronize with
 
 // Task communication queues
 QueueHandle_t time_update_queue; // Time keeping module sends time updates to the main controller through this queue
@@ -88,8 +93,17 @@ struct power_mode_control_args power_mode_control_args = {
     .power_mode_button_pin = POWER_MODE_BUTTON_GPIO
 };
 
+// Arguments for the SNTP synchronization
+struct sntp_synch_args sntp_synch_args = {
+    .synch_interval_ms = SNTP_SYNCH_INTERVAL_MS,
+    .ntp_server_url = SNTP_SERVER_URL
+};
+
+// Main task
 void app_main(void) {
-    // Initialize the OLED display
+    vTaskPrioritySet(NULL, 3); // Set the priority of the main task to 3 (highest)
+    esp_event_loop_create_default(); // Create the default event loop, needed for communication between tasks
+
     initialize_oled(OLED_ADDR, I2C_SDA_GPIO, I2C_SCL_GPIO);
     write_to_oled("Starting...", ""); // Display "Connecting to WiFi..." on the OLED
 
@@ -108,8 +122,10 @@ void app_main(void) {
     wifi_start(WIFI_SSID, WIFI_PASSWORD, &networkstatus_message_box);
     write_to_oled("Connecting...", WIFI_SSID); // Display "Connecting to WiFi..." on the OLED
 
+    bool connected_on_start = wait_on_connection(); // Wait for the WiFi connection to be established, after 15 seconds it times out, and we continue without a connection
+
     // Wait for the WiFi connection to be established, after 15 seconds it times out, and we continue without a connection
-    if (!(wait_on_connection())) {
+    if (!connected_on_start) {
         // Wifi fails
         write_to_oled("WiFi Failed", "");
         start_time_keeping(); // Start the time keeping even if WiFi connection failed, so that we at least have the clock running and can display the time and network status on the OLED)
@@ -117,7 +133,7 @@ void app_main(void) {
     } else {
         // Wifi succeeds
         write_to_oled("Connected", WIFI_SSID);
-        enable_sntp_sync(); // Enable SNTP synchronization to get the correct time from the network every x minutes
+        set_up_sntp_sync(&sntp_synch_args); // Enable SNTP synchronization to get the correct time from the network every x minutes
         start_time_keeping_on_sync(); // Start the time keeping when the first SNTP synchronization occurs, so that we have the correct time from the start
     }
 
@@ -128,7 +144,7 @@ void app_main(void) {
     uint32_t steps_to_take; // Variable to hold the calculated number of steps the stepper motor needs to take to move
 
     enum network_status current_network_status = UNDEFINED_NETWORKSTATUS; // buffer to hold the current network status received from the network interface module
-    enum network_status last_network_status = UNDEFINED_NETWORKSTATUS; // Last known network status, used to detect changes in network status to reset SNTP synchronization when connection is (re-)established
+    enum network_status last_network_status = connected_on_start ? CONNECTED : UNDEFINED_NETWORKSTATUS; // Last known network status, used to detect changes in network status to reset SNTP synchronization when connection is (re-)established
 
     enum stepper_motor_mode current_stepper_motor_mode = NORMAL_OPERATION; // buffer to hold the current mode of the stepper motor (normal operation or time setting mode) received from the stepper motor position set control module
     enum power_mode current_power_mode = NORMAL_MODE; // buffer to hold the current power mode received from the power mode control module
@@ -136,10 +152,9 @@ void app_main(void) {
     while (1) {
         // Wait for time updates from the time keeping module
         // we will get an update every centibeat
-        if (xQueueReceive(time_update_queue, &current_time, pdMS_TO_TICKS(10000)) != pdTRUE) {
-            // When connected, timekeeping wil only start after the first synch, When this takes to long, or if we lose connection while waiting. Start the time keeping to at least have the clock running, and try to restart SNTP synchronization in case of connection issues
+        if (xQueueReceive(time_update_queue, &current_time, pdMS_TO_TICKS(20000)) != pdTRUE) {
+            // When connected, timekeeping wil only start after the first synch, When this takes to long, or if we lose connection while waiting. Start the time keeping to at least have the clock running
             start_time_keeping();
-            restart_sntp_synch();
             continue;
         }
 
@@ -250,8 +265,13 @@ void app_main(void) {
 
         // Reset SNTP synchronization when connection is re-established
         // When losing connection, synchonization will stop until its reset again
-        if ((last_network_status != CONNECTED && last_network_status != UNDEFINED_NETWORKSTATUS) && current_network_status == CONNECTED) {
-            restart_sntp_synch();
+        if ((last_network_status != CONNECTED && current_network_status == CONNECTED)) {
+            // Start or restart SNTP synchronization to get the correct time from the network, depending on whether synchronization was already enabled before losing connection or not
+            if (connected_on_start) {
+                restart_sntp_synch(&sntp_synch_args);
+            } else {
+                set_up_sntp_sync(&sntp_synch_args);
+            }
         }
 
         last_network_status = current_network_status;
